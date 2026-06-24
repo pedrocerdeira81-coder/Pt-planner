@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PT Planner">
+<meta name="theme-color" content="#f0efe9">
+<title>PT Planner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f0efe9;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+input,select,textarea{-webkit-appearance:none;appearance:none;outline:none}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:.35}
+::-webkit-scrollbar{width:0}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect}=React;
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const C={
+  bg:'#f0efe9',card:'#ffffff',surface:'#f7f6f2',border:'rgba(0,0,0,0.08)',
+  black:'#111118',charcoal:'#1e1e2a',gold:'#c9973a',goldLight:'#e8b84b',
+  gradGold:'linear-gradient(135deg,#c9973a,#e8b84b,#c9973a)',
+  gradHero:'linear-gradient(160deg,#111118 0%,#1e1e2a 60%,#2a2438 100%)',
+  gradDark:'linear-gradient(135deg,#111118,#1e1e2a)',
+  gradWarn:'linear-gradient(135deg,#f59e0b,#fbbf24)',
+  gradRed:'linear-gradient(135deg,#dc2626,#ef4444)',
+  green:'#059669',warn:'#d97706',red:'#dc2626',
+  txt:'#111118',mid:'#374151',muted:'#9ca3af',
+  shadow:'0 2px 16px rgba(0,0,0,0.07)',
+  shadowGold:'0 8px 28px rgba(201,151,58,0.25)',
+  shadowDark:'0 8px 28px rgba(17,17,24,0.18)',
+};
+const store={
+  async get(k){try{const v=localStorage.getItem(k);return v?{value:v}:null;}catch{return null;}},
+  async set(k,v){try{localStorage.setItem(k,v);}catch{}}
+};
+function fmt(iso){try{const d=new Date(iso);return MONTHS[d.getMonth()]+' '+d.getDate();}catch{return iso;}}
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function monthStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function getTier(n){if(n>=120)return 0.70;if(n>=101)return 0.65;if(n>=81)return 0.60;return 0.45;}
+function getTierLabel(n){if(n>=120)return '120+ · 70%';if(n>=101)return '101-119 · 65%';if(n>=81)return '81-100 · 60%';return 'Up to 80 · 45%';}
+
+function Modal({children,title,onClose}){
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:40,display:'flex',alignItems:'flex-end',backdropFilter:'blur(6px)'}}>
+      <div style={{background:'#fff',borderRadius:'26px 26px 0 0',padding:'8px 20px 48px',width:'100%',maxHeight:'88vh',overflowY:'auto'}}>
+        <div style={{width:36,height:4,borderRadius:99,background:'#e5e7eb',margin:'12px auto 20px'}}/>
+        <div style={{fontSize:20,fontWeight:900,marginBottom:20,letterSpacing:-0.6,color:'#111118'}}>{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function Lbl({children}){return <div style={{fontSize:11,fontWeight:700,color:'#9ca3af',marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>{children}</div>;}
+
+function App(){
+  const[clients,setClients]=useState([]);
+  const[sessions,setSessions]=useState([]);
+  const[charges,setCharges]=useState([]);
+  const[tab,setTab]=useState('dashboard');
+  const[lastSync,setLastSync]=useState(null);
+  const[syncStatus,setSyncStatus]=useState('');
+  const[modal,setModal]=useState(null);
+  const[editId,setEditId]=useState(null);
+  const[form,setForm]=useState({});
+  const[expanded,setExpanded]=useState(null);
+  const[period,setPeriod]=useState({start:'',end:''});
+  const[showPeriod,setShowPeriod]=useState(false);
+  const[showImport,setShowImport]=useState(false);
+  const[importText,setImportText]=useState('');
+  const[viewDate,setViewDate]=useState(todayStr());
+  const[showCommission,setShowCommission]=useState(false);
+  const[commSettings,setCommSettings]=useState({quota:'7758',netFactor:'81.63'});
+
+  useEffect(()=>{
+    loadAll();
+    function handleSync(){
+      const hash=window.location.hash;
+      if(hash.indexOf('#sync=')===0){
+        try{
+          const decoded=atob(hash.replace('#sync=',''));
+          const pairs=decoded.split(',');
+          const imported=pairs.map(p=>{
+            const idx=p.lastIndexOf('|');
+            const name=p.substring(0,idx);
+            const date=p.substring(idx+1);
+            return{title:name+' PT',date,clientName:name};
+          }).filter(s=>s.date&&s.clientName);
+          if(imported.length>0){
+            saveSessions(imported,new Date().toISOString());
+            setSyncStatus('✅ '+imported.length+' sessions synced');
+            setTimeout(()=>setSyncStatus(''),4000);
+            window.history.replaceState(null,'',window.location.pathname);
+          }
+        }catch(e){console.error(e);}
+      }
+    }
+    handleSync();
+    window.addEventListener('hashchange',handleSync);
+    return()=>window.removeEventListener('hashchange',handleSync);
+  },[]);
+
+  async function loadAll(){
+    try{const r=await store.get('pt-period');if(r)setPeriod(JSON.parse(r.value));}catch{}
+    try{const r=await store.get('pt-clients');if(r)setClients(JSON.parse(r.value));}catch{}
+    try{const r=await store.get('pt-charges');if(r)setCharges(JSON.parse(r.value));}catch{}
+    try{const r=await store.get('pt-sessions');if(r){const d=JSON.parse(r.value);setSessions(d.s||[]);setLastSync(d.t);}}catch{}
+    try{const r=await store.get('pt-comm');if(r)setCommSettings(JSON.parse(r.value));}catch{}
+  }
+
+  async function saveClients(v){setClients(v);try{await store.set('pt-clients',JSON.stringify(v));}catch{}}
+  async function saveCharges(v){setCharges(v);try{await store.set('pt-charges',JSON.stringify(v));}catch{}}
+  async function saveSessions(v,t){setSessions(v);setLastSync(t);try{await store.set('pt-sessions',JSON.stringify({s:v,t}));}catch{}}
+  async function savePeriod(v){setPeriod(v);try{await store.set('pt-period',JSON.stringify(v));}catch{}}
+  async function saveCommSettings(v){setCommSettings(v);try{await store.set('pt-comm',JSON.stringify(v));}catch{}}
+
+  function inPeriod(d){if(!period.start||!period.end)return d&&d.startsWith(monthStr());return d>=period.start&&d<=period.end;}
+  function periodLabel(){if(!period.start||!period.end)return MONTHS[new Date().getMonth()];return fmt(period.start)+' - '+fmt(period.end);}
+  function match(a,b){if(!a||!b)return false;const x=a.toLowerCase().trim(),y=b.toLowerCase().trim();return x.includes(y)||y.includes(x);}
+
+  const viewSess=sessions.filter(s=>s.date===viewDate);
+  const periodSess=sessions.filter(s=>inPeriod(s.date));
+
+  function clientPeriodCount(c){return periodSess.filter(s=>match(c.name,s.clientName)).length;}
+  function clientTotalUsed(c){
+    return sessions.filter(s=>{
+      if(!match(c.name,s.clientName))return false;
+      if(c.startDate&&s.date<c.startDate)return false;
+      return true;
+    }).length;
+  }
+  function cCharges(id){return charges.filter(c=>c.clientId===id);}
+  function cChargesTotal(id){return cCharges(id).reduce((s,c)=>s+Number(c.amount||0),0);}
+
+  function openAdd(m,extra={}){setForm({date:todayStr(),...extra});setEditId(null);setModal(m);}
+  function openEdit(c){setForm({...c});setEditId(c.id);setModal('client');}
+  function saveClient(){
+    if(!form.name||!form.packageSessions)return;
+    const u=editId?clients.map(c=>c.id===editId?{...form,id:editId}:c):[...clients,{...form,id:Date.now()+''}];
+    saveClients(u);setModal(null);
+  }
+  function delClient(id){saveClients(clients.filter(c=>c.id!==id));setModal(null);}
+  function saveCharge(){if(!form.clientId)return;saveCharges([...charges,{...form,id:Date.now()+''}]);setModal(null);}
+  function delCharge(id){saveCharges(charges.filter(c=>c.id!==id));}
+  function f(v){setForm(p=>({...p,...v}));}
+
+  function importSessions(){
+    try{
+      let raw=importText.trim().replace(/```json|```/g,'').trim();
+      let parsed=[];
+      const start=raw.indexOf('['),end=raw.lastIndexOf(']');
+      if(start!==-1&&end!==-1){try{parsed=JSON.parse(raw.substring(start,end+1));}catch{}}
+      if(parsed.length===0&&raw.includes('|')){
+        parsed=raw.split(',').map(p=>{
+          const idx=p.lastIndexOf('|');
+          if(idx===-1)return null;
+          const name=p.substring(0,idx).trim(),date=p.substring(idx+1).trim();
+          return{title:name+' PT',date,clientName:name};
+        }).filter(s=>s&&s.date&&s.clientName);
+      }
+      if(!parsed.length)throw new Error('No data found');
+      saveSessions(parsed,new Date().toISOString());
+      setShowImport(false);setImportText('');
+      setSyncStatus('✅ '+parsed.length+' sessions loaded');
+      setTimeout(()=>setSyncStatus(''),3000);
+    }catch(e){setSyncStatus('❌ '+e.message);setTimeout(()=>setSyncStatus(''),5000);}
+  }
+
+  const chargeLabels={late_cancel:'⏰ Late Cancel',no_show:'❌ No Show',other:'📝 Other'};
+  const inp={background:C.surface,border:'1.5px solid '+C.border,borderRadius:14,padding:'14px 16px',color:C.txt,fontSize:15,width:'100%',marginBottom:12,boxSizing:'border-box',fontFamily:'inherit',fontWeight:500};
+  const goldBtn={backgroundImage:C.gradGold,color:C.black,border:'none',borderRadius:14,padding:'16px',width:'100%',fontSize:15,fontWeight:800,cursor:'pointer',marginTop:8,boxShadow:C.shadowGold};
+  const ghostBtn={background:'transparent',color:C.charcoal,border:'1.5px solid rgba(0,0,0,0.15)',borderRadius:14,padding:'14px',width:'100%',fontSize:14,fontWeight:600,cursor:'pointer',marginTop:8};
+  const primaryBtn={backgroundImage:C.gradDark,color:'#fff',border:'none',borderRadius:14,padding:'16px',width:'100%',fontSize:15,fontWeight:700,cursor:'pointer',marginTop:8,boxShadow:C.shadowDark};
+
+  const totalRevenue=clients.reduce((sum,c)=>{
+    const ps=Number(c.packageSessions)>0?(Number(c.packageValue)/Number(c.packageSessions)):0;
+    return sum+(clientPeriodCount(c)*ps);
+  },0);
+  const netFactor=(Number(commSettings.netFactor)||81.63)/100;
+  const netRevenue=totalRevenue*netFactor;
+  const quota=Number(commSettings.quota)||0;
+  const commRevenue=Math.max(0,netRevenue-quota);
+  const commission=commRevenue*getTier(periodSess.length);
+
+  return(
+    <div style={{background:C.bg,minHeight:'100dvh',color:C.txt,fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif',paddingBottom:96}}>
+      <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'18px 20px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div>
+          <div style={{fontSize:22,fontWeight:900,letterSpacing:-0.7,color:C.black}}>
+            PT <span style={{backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>Planner</span>
+          </div>
+          <div style={{fontSize:11,color:C.muted,marginTop:1,fontWeight:500}}>{syncStatus||(lastSync?'Last sync '+fmt(lastSync):'Not synced yet')}</div>
+        </div>
+        <button onClick={()=>setShowImport(true)} style={{backgroundImage:C.gradDark,color:'#fff',border:'none',borderRadius:12,padding:'9px 18px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:C.shadowDark}}>Import</button>
+      </div>
+
+      <div style={{padding:'20px 16px 0'}}>
+        {tab==='dashboard'&&<>
+          <div style={{backgroundImage:C.gradHero,borderRadius:24,padding:'26px 24px',marginBottom:16,boxShadow:C.shadowDark,position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',top:0,left:24,right:24,height:2,backgroundImage:C.gradGold,borderRadius:99}}/>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',position:'relative'}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:8}}>{viewDate===todayStr()?'Today':fmt(viewDate)}</div>
+                <div style={{fontSize:62,fontWeight:900,lineHeight:1,letterSpacing:-3,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>{viewSess.length}</div>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:5,fontWeight:600,textTransform:'uppercase'}}>sessions</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:8}}>Period</div>
+                <div style={{fontSize:62,fontWeight:900,lineHeight:1,letterSpacing:-3,color:'#fff'}}>{periodSess.length}</div>
+                <div onClick={()=>setShowPeriod(true)} style={{fontSize:11,color:'rgba(201,151,58,0.7)',marginTop:5,cursor:'pointer',fontWeight:600}}>{periodLabel()}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5}}>Sessions</div>
+            <input type="date" value={viewDate} onChange={e=>setViewDate(e.target.value)} style={{background:C.card,border:'1.5px solid '+C.border,borderRadius:10,padding:'6px 12px',color:C.txt,fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:C.shadow}}/>
+          </div>
+          {viewSess.length===0
+            ?<div style={{background:C.card,borderRadius:18,padding:'22px',textAlign:'center',color:C.muted,fontSize:13,boxShadow:C.shadow,marginBottom:12}}>No sessions this day</div>
+            :viewSess.map((s,i)=>(
+              <div key={i} style={{background:C.card,borderRadius:16,padding:'14px 16px',marginBottom:10,boxShadow:C.shadow,display:'flex',alignItems:'center',gap:14}}>
+                <div style={{width:42,height:42,borderRadius:13,backgroundImage:C.gradDark,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19,flexShrink:0}}>💪</div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:15,color:C.txt}}>{s.clientName||s.title}</div>
+                  <div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.title}</div>
+                </div>
+              </div>
+            ))
+          }
+
+          {clients.length>0&&<>
+            <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14,marginTop:6}}>Clients</div>
+            {clients.map(c=>{
+              const used=clientTotalUsed(c),total=Number(c.packageSessions)||0;
+              const rem=Math.max(0,total-used),pct=total>0?Math.min(100,(used/total)*100):0;
+              const perSess=total>0?(Number(c.packageValue)/total).toFixed(0):0;
+              const remVal=(rem*perSess).toFixed(0);
+              const isLow=rem<=2&&rem>0,isDone=rem===0&&total>0;
+              return(
+                <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow,borderLeft:'3px solid '+(isDone?C.red:isLow?C.warn:C.gold)}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                    <div style={{fontSize:17,fontWeight:800}}>{c.name}</div>
+                    <div style={{display:'flex',gap:6}}>
+                      {isLow&&<span style={{fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,background:'#fef3c7',color:'#92400e'}}>⚠ LOW</span>}
+                      {isDone&&<span style={{fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,background:'#fee2e2',color:'#991b1b'}}>DONE</span>}
+                      <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:99,background:C.surface,color:C.muted}}>{clientPeriodCount(c)} this period</span>
+                    </div>
+                  </div>
+                  <div style={{background:'rgba(0,0,0,0.07)',borderRadius:99,height:5,margin:'10px 0',overflow:'hidden'}}>
+                    <div style={{height:'100%',borderRadius:99,width:pct+'%',backgroundImage:isDone?C.gradRed:isLow?C.gradWarn:C.gradGold}}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13,fontWeight:600}}>
+                    <span style={{color:C.mid}}>{used}/{total} sessions</span>
+                    <span style={{color:isDone?C.red:isLow?C.warn:C.green,fontWeight:700}}>{rem} remaining</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border,color:C.muted}}>
+                    <span>AED {Number(c.packageValue||0).toLocaleString()} · AED {perSess}/sess</span>
+                    <span style={{color:C.green,fontWeight:700}}>AED {Number(remVal).toLocaleString()} left</span>
+                  </div>
+                </div>
+              );
+            })}
+          </>}
+        </>}
+
+        {tab==='clients'&&<>
+          <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14}}>Clients · {clients.length}</div>
+          {clients.length===0
+            ?<div style={{background:C.card,borderRadius:20,padding:'48px 20px',textAlign:'center',boxShadow:C.shadow}}>
+              <div style={{fontSize:48,marginBottom:12}}>👤</div>
+              <div style={{color:C.muted,fontSize:14}}>Tap + to add your first client</div>
+            </div>
+            :clients.map(c=>{
+              const used=clientTotalUsed(c),total=Number(c.packageSessions)||0;
+              const rem=Math.max(0,total-used),pct=total>0?Math.min(100,(used/total)*100):0;
+              const perSess=total>0?(Number(c.packageValue)/total).toFixed(0):0;
+              const remVal=(rem*perSess).toFixed(0);
+              const isLow=rem<=2&&rem>0,isDone=rem===0&&total>0;
+              const isExp=expanded===c.id,ch_=cChargesTotal(c.id);
+              return(
+                <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow,borderLeft:'3px solid '+(isDone?C.red:isLow?C.warn:C.gold)}}>
+                  <div style={{display:'flex',justifyContent:'space-between',cursor:'pointer'}} onClick={()=>setExpanded(isExp?null:c.id)}>
+                    <div style={{fontSize:17,fontWeight:800}}>{c.name}</div>
+                    <span style={{color:C.muted,fontSize:11}}>{isExp?'▲':'▼'}</span>
+                  </div>
+                  <div style={{background:'rgba(0,0,0,0.07)',borderRadius:99,height:5,margin:'10px 0',overflow:'hidden'}}>
+                    <div style={{height:'100%',borderRadius:99,width:pct+'%',backgroundImage:isDone?C.gradRed:isLow?C.gradWarn:C.gradGold}}/>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                    {[['Used',used,C.charcoal],['Left',rem,isDone?C.red:isLow?C.warn:C.green],['Total',total,C.gold]].map(([l,v,col])=>(
+                      <div key={l} style={{background:C.surface,borderRadius:13,padding:'10px 8px',textAlign:'center'}}>
+                        <div style={{fontSize:22,fontWeight:900,color:col}}>{v}</div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:2,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {isExp&&<div style={{marginTop:14,paddingTop:14,borderTop:'1px solid '+C.border}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                      {[
+                        ['Package Value','AED '+Number(c.packageValue||0).toLocaleString(),C.charcoal],
+                        ['Remaining','AED '+Number(remVal).toLocaleString(),C.green],
+                        ['Per Session','AED '+perSess,C.mid],
+                        ch_>0?['Charges','AED '+ch_,C.red]:['Start Date',c.startDate||'-',C.muted],
+                      ].map(([l,v,col])=>(
+                        <div key={l} style={{background:C.surface,borderRadius:13,padding:'11px 14px'}}>
+                          <div style={{fontSize:14,fontWeight:800,color:col}}>{v}</div>
+                          <div style={{fontSize:10,color:C.muted,marginTop:3,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{l}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:'flex',gap:8}}>
+                      <button style={{...primaryBtn,flex:1,padding:'12px',fontSize:13,marginTop:0}} onClick={()=>openEdit(c)}>✏️ Edit</button>
+                      <button style={{flex:1,padding:'12px',fontSize:13,border:'1.5px solid '+C.border,borderRadius:14,background:C.surface,color:C.mid,fontWeight:700,cursor:'pointer'}} onClick={()=>openAdd('charge',{clientId:c.id})}>+ Charge</button>
+                    </div>
+                  </div>}
+                </div>
+              );
+            })
+          }
+        </>}
+
+        {tab==='report'&&<>
+          <div style={{backgroundImage:C.gradHero,borderRadius:20,padding:'20px 22px',marginBottom:16,boxShadow:C.shadowDark,position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',top:0,left:24,right:24,height:2,backgroundImage:C.gradGold,borderRadius:99}}/>
+            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:10}}>Period Report</div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+              <div>
+                <div style={{fontSize:38,fontWeight:900,letterSpacing:-2,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>{periodSess.length}</div>
+                <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:3,fontWeight:600,textTransform:'uppercase'}}>total sessions</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div onClick={()=>setShowPeriod(true)} style={{fontSize:13,color:'rgba(255,255,255,0.5)',fontWeight:600,cursor:'pointer'}}>{periodLabel()}</div>
+                <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:3}}>{clients.length} clients</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{background:C.card,borderRadius:20,padding:'18px 20px',marginBottom:16,boxShadow:C.shadow,borderLeft:'3px solid '+C.gold}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:1.5}}>Commission Estimate</div>
+              <span onClick={()=>setShowCommission(true)} style={{fontSize:11,color:C.gold,fontWeight:700,cursor:'pointer'}}>Settings</span>
+            </div>
+            <div style={{fontSize:36,fontWeight:900,letterSpacing:-1.5,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text',marginBottom:10}}>
+              AED {commission.toLocaleString('en',{maximumFractionDigits:2})}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+              <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Tier ({periodSess.length} sessions)</span>
+              <span style={{fontSize:12,fontWeight:800,color:C.charcoal}}>{getTierLabel(periodSess.length)}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
+              {[['Total Revenue','AED '+totalRevenue.toLocaleString('en',{maximumFractionDigits:0})],['Net Revenue','AED '+netRevenue.toLocaleString('en',{maximumFractionDigits:0})],['Quota','AED '+quota.toLocaleString('en',{maximumFractionDigits:0})],['Comm. Revenue','AED '+commRevenue.toLocaleString('en',{maximumFractionDigits:0})]].map(([l,v])=>(
+                <div key={l} style={{background:C.surface,borderRadius:12,padding:'9px 12px'}}>
+                  <div style={{fontSize:13,fontWeight:800,color:C.charcoal}}>{v}</div>
+                  <div style={{fontSize:9,color:C.muted,marginTop:2,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {[...clients].map(c=>({...c,ps:periodSess.filter(s=>match(c.name,s.clientName)).sort((a,b)=>a.date>b.date?1:-1)}))
+            .filter(c=>c.ps.length>0).sort((a,b)=>b.ps.length-a.ps.length)
+            .map((c,i)=>(
+              <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:10,boxShadow:C.shadow,borderLeft:'3px solid '+(i===0?C.gold:C.border)}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <div style={{fontSize:16,fontWeight:800}}>{c.name}</div>
+                  <div style={{fontSize:22,fontWeight:900,color:i===0?C.gold:C.charcoal}}>{c.ps.length} <span style={{fontSize:12,fontWeight:600,color:C.muted}}>sessions</span></div>
+                </div>
+                <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:10,textTransform:'uppercase',letterSpacing:0.8}}>
+                  {fmt(period.start||c.ps[0].date)} - {fmt(period.end||c.ps[c.ps.length-1].date)}
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                  {c.ps.map((s,j)=>(
+                    <span key={j} style={{background:C.surface,borderRadius:9,padding:'5px 10px',fontSize:12,fontWeight:700,color:C.mid,border:'1px solid '+C.border}}>{fmt(s.date)}</span>
+                  ))}
+                </div>
+              </div>
+            ))
+          }
+        </>}
+
+        {tab==='charges'&&<>
+          <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14}}>Charges & Incidents</div>
+          {charges.length===0
+            ?<div style={{background:C.card,borderRadius:20,padding:'48px 20px',textAlign:'center',boxShadow:C.shadow}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <div style={{color:C.muted,fontSize:14}}>No charges logged</div>
+            </div>
+            :clients.filter(c=>cCharges(c.id).length>0).map(c=>(
+              <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow}}>
+                <div style={{fontSize:16,fontWeight:800,marginBottom:12}}>{c.name}</div>
+                {cCharges(c.id).map(ch=>(
+                  <div key={ch.id} style={{background:C.surface,borderRadius:13,padding:'12px 14px',marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700}}>{chargeLabels[ch.type]||ch.type}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmt(ch.date)}</div>
+                      </div>
+                      <button onClick={()=>delCharge(ch.id)} style={{background:'#fee2e2',border:'none',color:C.red,cursor:'pointer',fontSize:12,borderRadius:9,padding:'5px 11px',fontWeight:700}}>Remove</button>
+                    </div>
+                    {ch.notes&&<div style={{fontSize:12,color:C.mid,marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border}}>{ch.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            ))
+          }
+        </>}
+      </div>
+
+      {(tab==='clients'||tab==='charges')&&(
+        <button onClick={()=>tab==='clients'?openAdd('client',{startDate:todayStr()}):openAdd('charge')}
+          style={{position:'fixed',bottom:100,right:20,width:56,height:56,borderRadius:99,backgroundImage:C.gradGold,border:'none',color:C.black,fontSize:28,cursor:'pointer',boxShadow:C.shadowGold,zIndex:10,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900}}>+</button>
+      )}
+
+      <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,borderTop:'1px solid '+C.border,display:'flex',padding:'10px 0 14px',zIndex:20,boxShadow:'0 -4px 16px rgba(0,0,0,0.06)'}}>
+        {[['dashboard','📊','Dashboard'],['clients','👤','Clients'],['report','🏆','Report'],['charges','🧾','Charges']].map(([id,icon,label])=>(
+          <div key={id} onClick={()=>setTab(id)} style={{flex:1,textAlign:'center',cursor:'pointer',padding:'4px 0'}}>
+            <div style={{fontSize:18,marginBottom:3}}>{icon}</div>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:0.5,color:tab===id?C.black:C.muted,textTransform:'uppercase'}}>{label}</div>
+            {tab===id&&<div style={{width:20,height:2.5,borderRadius:99,backgroundImage:C.gradGold,margin:'4px auto 0'}}/>}
+          </div>
+        ))}
+      </div>
+
+      {showPeriod&&<Modal title="Billing Period" onClose={()=>setShowPeriod(false)}>
+        <p style={{fontSize:13,color:C.muted,marginBottom:18,lineHeight:1.6}}>Set your custom billing window</p>
+        <Lbl>Start Date</Lbl><input style={inp} type="date" value={period.start||''} onChange={e=>setPeriod(p=>({...p,start:e.target.value}))}/>
+        <Lbl>End Date</Lbl><input style={inp} type="date" value={period.end||''} onChange={e=>setPeriod(p=>({...p,end:e.target.value}))}/>
+        <button style={goldBtn} onClick={()=>{savePeriod(period);setShowPeriod(false);}}>Save Period</button>
+        <button style={ghostBtn} onClick={()=>{savePeriod({start:'',end:''});setShowPeriod(false);}}>Reset to Calendar Month</button>
+      </Modal>}
+
+      {showImport&&<Modal title="Import Sessions" onClose={()=>setShowImport(false)}>
+        <p style={{fontSize:13,color:C.muted,marginBottom:18,lineHeight:1.6}}>Paste the compact data from Claude below.</p>
+        <Lbl>Paste Data</Lbl>
+        <textarea style={{...inp,height:120,resize:'none',fontFamily:'monospace',fontSize:11}} value={importText} onChange={e=>setImportText(e.target.value)} placeholder='Name|2026-06-01,Name|2026-06-02,...'/>
+        <button style={goldBtn} onClick={importSessions}>Import Sessions</button>
+      </Modal>}
+
+      {showCommission&&<Modal title="Commission Settings" onClose={()=>setShowCommission(false)}>
+        <Lbl>Monthly Quota (AED)</Lbl>
+        <input style={inp} type="number" value={commSettings.quota} onChange={e=>setCommSettings(p=>({...p,quota:e.target.value}))}/>
+        <Lbl>Net Revenue Factor (%)</Lbl>
+        <input style={inp} type="number" value={commSettings.netFactor} onChange={e=>setCommSettings(p=>({...p,netFactor:e.target.value}))}/>
+        <div style={{background:C.surface,borderRadius:14,padding:'14px',marginBottom:6,fontSize:12,color:C.mid,lineHeight:1.8}}>
+          Up to 80 = 45% · 81-100 = 60% · 101-119 = 65% · 120+ = 70%
+        </div>
+        <button style={goldBtn} onClick={()=>{saveCommSettings(commSettings);setShowCommission(false);}}>Save Settings</button>
+      </Modal>}
+
+      {modal==='client'&&<Modal title={editId?'Edit Client':'New Client'} onClose={()=>setModal(null)}>
+        <Lbl>Name</Lbl><input style={inp} placeholder="e.g. Jeremy" value={form.name||''} onChange={e=>f({name:e.target.value})}/>
+        <Lbl>Package Sessions</Lbl><input style={inp} type="number" placeholder="e.g. 20" value={form.packageSessions||''} onChange={e=>f({packageSessions:e.target.value})}/>
+        <Lbl>Package Value (AED)</Lbl><input style={inp} type="number" placeholder="e.g. 3500" value={form.packageValue||''} onChange={e=>f({packageValue:e.target.value})}/>
+        <Lbl>Start Date</Lbl><input style={inp} type="date" value={form.startDate||''} onChange={e=>f({startDate:e.target.value})}/>
+        <button style={goldBtn} onClick={saveClient}>Save Client</button>
+        {editId&&<button style={ghostBtn} onClick={()=>delClient(editId)}>Delete Client</button>}
+      </Modal>}
+
+      {modal==='charge'&&<Modal title="Log Charge" onClose={()=>setModal(null)}>
+        <Lbl>Client</Lbl>
+        <select style={inp} value={form.clientId||''} onChange={e=>f({clientId:e.target.value})}>
+          <option value="">Select client...</option>
+          {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <Lbl>Type</Lbl>
+        <select style={inp} value={form.type||'late_cancel'} onChange={e=>f({type:e.target.value})}>
+          <option value="late_cancel">⏰ Late Cancellation</option>
+          <option value="no_show">❌ No Show</option>
+          <option value="other">📝 Other</option>
+        </select>
+        <Lbl>Date</Lbl><input style={inp} type="date" value={form.date||''} onChange={e=>f({date:e.target.value})}/>
+        <Lbl>Notes (optional)</Lbl><input style={inp} placeholder="e.g. Cancelled 1h before" value={form.notes||''} onChange={e=>f({notes:e.target.value})}/>
+        <button style={goldBtn} onClick={saveCharge}>Save Charge</button>
+      </Modal>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
