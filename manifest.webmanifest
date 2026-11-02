@@ -1,0 +1,38 @@
+{
+  "name": "PT Planner",
+  "short_name": "PT Planner",
+  "description": "Clients, sessions, packages, and commission for personal training.",
+  "id": "/Pt-planner/",
+  "start_url": "/Pt-planner/",
+  "scope": "/Pt-planner/",
+  "display": "standalone",
+  "background_color": "#f0efe9",
+  "theme_color": "#f0efe9",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/Pt-planner/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Pt-planner/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Pt-planner/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/Pt-planner/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
