@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f0e8">
+<title>Bring over clients</title>
+<style>
+body { margin: 0; background: #efeae2; color: #1c1916; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 480px; margin: 0 auto; background: #f7f4ef; min-height: 100dvh; padding: calc(20px + env(safe-area-inset-top)) 18px 32px; }
+h1 { font-family: ui-serif, Georgia, serif; font-size: 32px; line-height: 1.05; margin: 0 0 8px; }
+p { color: #5e564e; line-height: 1.45; }
+.card { background: #fffdfb; border-radius: 16px; padding: 12px 14px; margin: 8px 0; box-shadow: 0 8px 24px rgba(50, 32, 10, 0.05); }
+button { width: 100%; min-height: 48px; border: 0; border-radius: 14px; background: #146c43; color: white; font-weight: 700; font-size: 16px; margin-top: 14px; }
+.err { color: #8e2f2f; font-weight: 650; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bring over clients</h1>
+  <p id="lead">Looking for the old planner on this phone…</p>
+  <div id="list"></div>
+  <p id="msg" class="err"></p>
+  <button type="button" id="go" hidden>Add these clients to PT Planner</button>
+</main>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var app = params.get('app') || '';
+  var lead = document.getElementById('lead');
+  var list = document.getElementById('list');
+  var msg = document.getElementById('msg');
+  var button = document.getElementById('go');
+
+  function read(key) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  var clients = read('pt-clients');
+  var charges = read('pt-charges');
+  var comm = read('pt-comm');
+  var period = read('pt-period');
+  if (!Array.isArray(clients) || !clients.length) {
+    lead.textContent = 'No clients were found in this Safari.';
+    list.innerHTML = '<div class="card">Open this page in the same Safari you use for the old planner. If the old planner only lives in a home-screen icon, this page cannot see those clients. Add them in the new planner instead.</div>';
+    return;
+  }
+  lead.textContent = 'Found ' + clients.length + (clients.length === 1 ? ' client' : ' clients') + ' on this phone. Sessions are not copied. The new planner reads them from Google Calendar.';
+  clients.forEach(function (c) {
+    var pkg = null;
+    if (c && Array.isArray(c.packages) && c.packages.length) pkg = c.packages[c.packages.length - 1];
+    var sessions = pkg ? pkg.sessions : (c && c.packageSessions);
+    var value = pkg ? pkg.value : (c && c.packageValue);
+    var start = pkg ? pkg.startDate : (c && c.startDate);
+    list.innerHTML += '<div class="card"><b>' + esc(c && c.name) + '</b><div>Package: ' + esc(sessions || '?') + ' sessions · AED ' + esc(value || '0') + (start ? ' · from ' + esc(start) : '') + '</div></div>';
+  });
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(app)) {
+    msg.textContent = 'This page needs the link from PT Planner. Open the new planner, tap the gear, then tap Bring over old clients.';
+    return;
+  }
+  button.hidden = false;
+  button.addEventListener('click', function () {
+    var payload = {
+      clients: clients,
+      charges: Array.isArray(charges) ? charges : [],
+      comm: comm || {},
+      period: period || {}
+    };
+    var json = JSON.stringify(payload);
+    var b64 = btoa(unescape(encodeURIComponent(json)));
+    if (b64.length > 6000) {
+      msg.textContent = 'There are too many clients to send in one tap. Add them in the new planner. The list above is what to enter.';
+      return;
+    }
+    location.assign(app + '?migrate=' + encodeURIComponent(b64));
+  });
+})();
+</script>
+</body>
+</html>

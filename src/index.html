@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PT Planner">
+<meta name="theme-color" content="#f4f0e8">
+<title>PT Planner</title>
+<link rel="apple-touch-icon" href="https://pedrocerdeira81-coder.github.io/Pt-planner/icons/apple-touch-icon.png">
+<style>
+:root {
+  --bg: #efeae2;
+  --paper: #f7f4ef;
+  --card: #fffdfb;
+  --ink: #1c1916;
+  --muted: #7d756c;
+  --line: #e6dfd4;
+  --green: #146c43;
+  --green-soft: #e5f4ec;
+  --amber: #8a5a00;
+  --amber-soft: #fff4d8;
+  --red: #8e2f2f;
+  --red-soft: #fdecec;
+  --blue: #1d4f86;
+  --blue-soft: #e8f1fb;
+  --shadow: 0 1px 1px rgba(50, 32, 10, 0.04), 0 10px 30px rgba(50, 32, 10, 0.06);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.app {
+  max-width: 480px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+  position: relative;
+}
+.example {
+  background: #146c43;
+  color: #f4fff8;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 8px 16px;
+}
+.top {
+  padding: calc(16px + constant(safe-area-inset-top)) 18px 8px;
+  padding: calc(16px + env(safe-area-inset-top)) 18px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.brand {
+  font-family: ui-serif, Georgia, "Iowan Old Style", Palatino, serif;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.brand span { color: var(--green); }
+.sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.icon-btn, .back {
+  border: 0;
+  background: var(--card);
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.back { width: auto; padding: 0 14px; font-weight: 650; font-size: 15px; }
+svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { padding: 8px 16px 108px; }
+h2 {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 18px 0 10px;
+  font-weight: 750;
+}
+.card {
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px 14px;
+  margin-bottom: 10px;
+}
+.row {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.when { width: 72px; flex: none; color: var(--muted); font-size: 13px; font-weight: 700; }
+.when b { display: block; color: var(--ink); font-size: 15px; font-weight: 750; }
+.grow { flex: 1; min-width: 0; }
+.name { font-size: 16px; font-weight: 720; letter-spacing: -0.02em; }
+.note { color: var(--muted); font-size: 13px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag, .pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  flex: none;
+}
+.tag.normal, .pill.ok { background: var(--green-soft); color: var(--green); }
+.tag.free { background: var(--blue-soft); color: var(--blue); }
+.tag.charged, .pill.low { background: var(--amber-soft); color: var(--amber); }
+.pill.out { background: var(--red-soft); color: var(--red); }
+.client {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin-bottom: 10px;
+  border-left: 4px solid var(--green);
+}
+.client.low { border-left-color: #e0a100; }
+.client.out { border-left-color: var(--red); }
+.client-top, .spread { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.left { font-weight: 750; }
+.left.low { color: var(--amber); }
+.left.out { color: var(--red); }
+.left.ok { color: var(--green); }
+.bar { height: 6px; background: #efe8dc; border-radius: 99px; margin: 10px 0 8px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--green); border-radius: 99px; }
+.client.low .bar span { background: #e0a100; }
+.client.out .bar span { background: var(--red); }
+.meta { color: var(--muted); font-size: 13px; }
+.primary, .ghost, .danger {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  border: 0;
+  font-weight: 720;
+  margin-top: 8px;
+}
+.primary { background: var(--green); color: white; }
+.ghost { background: transparent; border: 1.5px solid var(--line); }
+.danger { background: var(--red-soft); color: var(--red); }
+.small { width: auto; min-height: 40px; padding: 0 14px; margin: 0; }
+.nav {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 100%);
+  bottom: 0;
+  display: flex;
+  background: rgba(255, 253, 251, 0.94);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  padding: 6px 6px calc(8px + constant(safe-area-inset-bottom));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 5;
+}
+.nav button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  padding: 6px 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.nav button.on { color: var(--green); }
+.hero-num {
+  font-family: ui-serif, Georgia, serif;
+  font-size: 64px;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+.hero-num small { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 16px; letter-spacing: 0; margin-left: 6px; font-weight: 650; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat { background: #f6f3ee; border-radius: 14px; padding: 10px 12px; }
+.stat b { display: block; font-size: 15px; }
+.stat span { color: var(--muted); font-size: 11px; font-weight: 720; letter-spacing: 0.04em; text-transform: uppercase; }
+label { display: block; font-size: 12px; font-weight: 720; color: var(--muted); margin: 12px 0 6px; }
+input, select, textarea {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  padding: 12px 14px;
+  font-size: 16px;
+}
+textarea { min-height: 80px; }
+.seg { display: flex; gap: 6px; }
+.seg button { flex: 1; min-height: 44px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff; font-weight: 720; }
+.seg button.on { background: var(--ink); color: white; border-color: var(--ink); }
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 25, 22, 0.42);
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet {
+  width: min(480px, 100%);
+  background: #fffdfb;
+  border-radius: 22px 22px 0 0;
+  padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  max-height: 88dvh;
+  overflow: auto;
+}
+.handle { width: 40px; height: 4px; border-radius: 99px; background: #e4ddd2; margin: 6px auto 12px; }
+.day-head { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 2px 8px; }
+.day-head b { font-size: 16px; }
+.today-mark { color: var(--green); }
+.empty { color: var(--muted); text-align: center; padding: 28px 10px; }
+.banner {
+  background: var(--green-soft);
+  color: var(--green);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.warn {
+  background: var(--amber-soft);
+  color: #6d4700;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.err { color: var(--red); font-size: 14px; font-weight: 650; margin-top: 8px; }
+.weekbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.weekbar b { white-space: nowrap; }
+.check { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 15px; }
+.check input { width: 22px; height: 22px; min-height: 0; }
+.pair { display: flex; gap: 8px; }
+.pair .ghost, .pair .primary, .pair .danger { margin-top: 0; }
+ol.steps { margin: 8px 0 0; padding-left: 18px; }
+ol.steps li { margin: 6px 0; }
+a { color: var(--green); }
+.loading, .fatal { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; }
+</style>
+</head>
+<body>
+<script type="application/json" id="boot-data">___PT_BOOT___</script>
+<div id="app"></div>
+<script>
+/*__PT_LOGIC__*/
+</script>
+<script>
+(function () {
+  var EXAMPLE = /(?:\?|&)example=1(?:&|$)/.test(location.search) && !(window.google && google.script && google.script.run);
+  var state = null;
+  var ui = { sheet: null, error: '', fatal: '', loading: false, monthOffset: 0, weekOffset: 0, boot: null };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function parseYmd(ymd) {
+    var p = String(ymd || '').split('-');
+    return new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])));
+  }
+  function prettyDate(ymd) {
+    var dt = parseYmd(ymd);
+    if (isNaN(dt.getTime())) return '';
+    var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return days[dt.getUTCDay()] + ' ' + dt.getUTCDate() + ' ' + months[dt.getUTCMonth()];
+  }
+  function longDate(ymd) {
+    var dt = parseYmd(ymd);
+    if (isNaN(dt.getTime())) return '';
+    var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return days[dt.getUTCDay()] + ', ' + dt.getUTCDate() + ' ' + months[dt.getUTCMonth()];
+  }
+  function prettyTime(hm, allDay) {
+    if (allDay || !hm) return 'All day';
+    var h = Number(String(hm).slice(0, 2));
+    var m = String(hm).slice(3, 5) || '00';
+    var ap = h >= 12 ? 'pm' : 'am';
+    var h12 = h % 12;
+    if (!h12) h12 = 12;
+    return h12 + ':' + m + ' ' + ap;
+  }
+  function money(n) {
+    var v = Math.round(Number(n) || 0);
+    var sign = v < 0 ? '-' : '';
+    return 'AED ' + sign + Math.abs(v).toLocaleString('en-US');
+  }
+  function moneyExact(n) {
+    var v = Math.round((Number(n) || 0) * 100) / 100;
+    var sign = v < 0 ? '-' : '';
+    return 'AED ' + sign + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function monthPeriod(offset) {
+    var p = String(state.today).split('-');
+    var dt = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1 + (offset || 0), 1));
+    var start = dt.toISOString().slice(0, 10);
+    var end = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return { start: start, end: end, label: months[dt.getUTCMonth()] + ' ' + dt.getUTCFullYear() };
+  }
+  function homePeriod() {
+    var s = state.settings || {};
+    if (s.periodStart && s.periodEnd) return { start: s.periodStart, end: s.periodEnd, custom: true, label: prettyDate(s.periodStart) + ' – ' + prettyDate(s.periodEnd) };
+    return Object.assign(monthPeriod(0), { custom: false });
+  }
+  function viewPeriod() {
+    var s = state.settings || {};
+    if (s.periodStart && s.periodEnd) return { start: s.periodStart, end: s.periodEnd, custom: true, label: prettyDate(s.periodStart) + ' – ' + prettyDate(s.periodEnd) };
+    return Object.assign(monthPeriod(ui.monthOffset || 0), { custom: false });
+  }
+  function route() {
+    var h = (location.hash || '#home').replace(/^#/, '');
+    var parts = h.split('/');
+    return { name: parts[0] || 'home', id: decodeURIComponent(parts.slice(1).join('/')) };
+  }
+  function clientById(id) {
+    var list = state.clients || [], i;
+    for (i = 0; i < list.length; i++) if (String(list[i].id) === String(id)) return list[i];
+    return null;
+  }
+  function sessionById(id) {
+    var list = state.sessions || [], i;
+    for (i = 0; i < list.length; i++) if (String(list[i].eventId) === String(id)) return list[i];
+    return null;
+  }
+  function statusLabel(s) {
+    if (s === 'free') return 'Free';
+    if (s === 'charged') return 'Charged';
+    return 'Normal';
+  }
+  function chargeLabel(t) {
+    if (t === 'late_cancel') return 'Late cancel';
+    if (t === 'no_show') return 'No show';
+    return 'Other';
+  }
+  function icon(name) {
+    var paths = {
+      home: '<path d="M4 11 12 4l8 7v9a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/>',
+      week: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3.5V7M16 3.5V7"/>',
+      people: '<circle cx="9" cy="8" r="3"/><path d="M3.8 19c.5-2.8 2.6-4.2 5.2-4.2s4.7 1.4 5.2 4.2"/><circle cx="17" cy="9" r="2.2"/><path d="M16 14.6c1.8.4 3.2 1.5 3.8 3.6"/>',
+      report: '<path d="M5 19V10M12 19V5M19 19v-7"/>',
+      gear: '<path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.3" fill="#fffdfb"/><circle cx="15" cy="16" r="2.3" fill="#fffdfb"/>'
+    };
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (paths[name] || '') + '</svg>';
+  }
+  function field(name, root) {
+    var el = (root || document).querySelector('[data-field="' + name + '"]');
+    if (!el) return '';
+    if (el.type === 'checkbox') return el.checked;
+    return el.value;
+  }
+
+  function sessionButton(s) {
+    return '<button type="button" class="row" data-act="session" data-id="' + esc(s.eventId) + '">' +
+      '<div class="when"><b>' + esc(prettyTime(s.start, s.allDay)) + '</b></div>' +
+      '<div class="grow"><div class="name">' + esc(s.clientName) + '</div>' +
+      (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '') +
+      '</div><span class="tag ' + esc(s.status || 'normal') + '">' + statusLabel(s.status) + '</span></button>';
+  }
+  function clientButton(c) {
+    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
+    var badge = st.out ? '<span class="pill out">Out</span>' : (st.low ? '<span class="pill low">Low</span>' : '');
+    var pct = st.total > 0 ? Math.max(0, Math.min(100, Math.round((st.used / st.total) * 100))) : (st.out ? 100 : 0);
+    var period = homePeriod();
+    var monthCount = PT.periodBillable([c], state.sessions, period, state.today).length;
+    return '<button type="button" class="client ' + klass + '" data-act="open-client" data-id="' + esc(c.id) + '">' +
+      '<div class="client-top"><div class="name">' + esc(c.name) + '</div><div>' + badge + '</div></div>' +
+      '<div class="bar"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="spread"><span class="left ' + klass + '">' + st.remaining + ' left</span><span class="meta">' + st.used + ' of ' + st.total + ' used</span></div>' +
+      '<div class="spread" style="margin-top:6px"><span class="meta">' + monthCount + ' this month</span><span class="meta">' + esc(money(st.remainingValue)) + ' left</span></div></button>';
+  }
+
+  function shell(title, body, back) {
+    var top = EXAMPLE ? '<div class="example">Example data. These are not real clients.</div>' : '';
+    var head = '<header class="top"><div>' +
+      (back ? '<button type="button" class="back" data-act="nav" data-go="' + esc(back) + '">Back</button>' : '<div class="brand">PT <span>Planner</span></div><div class="sub">' + esc(title || '') + '</div>') +
+      '</div>' +
+      (back ? '' : '<button type="button" class="icon-btn" data-act="nav" data-go="#settings" aria-label="Settings">' + icon('gear') + '</button>') +
+      '</header>';
+    var notice = '';
+    if (ui.boot && ui.boot.ok) {
+      var n = (ui.boot.added || []).length;
+      notice = '<div class="banner">' + (n ? ('Brought over ' + n + (n === 1 ? ' client.' : ' clients.')) : 'Those clients were already in PT Planner.') + '</div>';
+    } else if (ui.boot && ui.boot.error) {
+      notice = '<div class="warn">' + esc(ui.boot.error) + '</div>';
+    }
+    if (!EXAMPLE && state && state.triggerError) notice += '<div class="warn">' + esc(state.triggerError) + '</div>';
+    if (!EXAMPLE && state && state.triggerReady === false) notice += '<div class="warn">The 5:00 check is not on yet. Stay on this page. If Google asks, tap Allow.</div>';
+    return top + '<div class="app" data-screen="' + esc(route().name) + '">' + head + '<div class="wrap">' + notice + body + '</div>' + nav() + sheet() + '</div>';
+  }
+  function nav() {
+    var r = route().name;
+    function item(id, label, ic) {
+      return '<button type="button" data-act="nav" data-go="#' + id + '"' + (r === id ? ' class="on" aria-current="page"' : '') + '>' + icon(ic) + label + '</button>';
+    }
+    return '<nav class="nav">' + item('home', 'Home', 'home') + item('week', 'Week', 'week') + item('clients', 'Clients', 'people') + item('report', 'Report', 'report') + '</nav>';
+  }
+  function sheet() {
+    if (!ui.sheet) return '';
+    return '<div class="backdrop" data-act="close"><div class="sheet" data-act="stop"><div class="handle"></div>' + ui.sheet + '<div class="err" id="form-error">' + esc(ui.error || '') + '</div></div></div>';
+  }
+
+  function homeScreen() {
+    var today = state.today;
+    var todays = (state.sessions || []).filter(function (s) {
+      return s.date === today && s.disposition === 'kept';
+    }).sort(PT.compareSessions);
+    var unmatched = PT.unmatchedFromSessions(state.sessions, state.clients);
+    var attention = (state.clients || []).filter(function (c) {
+      var st = PT.currentRemaining(c, state.sessions, state.clients);
+      return st.low || st.out;
+    });
+    var body = '<p class="sub" style="margin:0 0 12px">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
+    body += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
+    if (unmatched.length) {
+      body += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Match them to a client, or ignore them</div></div></button>';
+    }
+    body += '<h2>Today</h2>';
+    if (!todays.length) body += '<div class="card empty">No sessions today.</div>';
+    todays.forEach(function (s) { body += sessionButton(s); });
+    body += '<h2>Packages' + (attention.length ? ' · ' + attention.length + ' low or out' : '') + '</h2>';
+    var rest = (state.clients || []).slice().sort(function (a, b) {
+      return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
+    });
+    if (!rest.length) body += '<div class="card empty">Add a client when you are ready. Sessions from the calendar can wait until the name is matched.</div>';
+    rest.forEach(function (c) { body += clientButton(c); });
+    return shell(longDate(today), body, '');
+  }
+
+  function weekScreen() {
+    var start = PT.addDaysYmd(PT.mondayOf(state.today), (ui.weekOffset || 0) * 7);
+    var end = PT.addDaysYmd(start, 6);
+    var a = parseYmd(start), b = parseYmd(end);
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var range = a.getUTCMonth() === b.getUTCMonth()
+      ? (a.getUTCDate() + '–' + b.getUTCDate() + ' ' + months[a.getUTCMonth()])
+      : (prettyDate(start) + ' – ' + prettyDate(end));
+    var body = '<div class="weekbar"><button type="button" class="ghost small" data-act="week" data-id="-1">Previous</button><b>' + esc(range) + '</b><button type="button" class="ghost small" data-act="week" data-id="1">Next</button></div>';
+    var d, i, list, label;
+    for (i = 0; i < 7; i++) {
+      d = PT.addDaysYmd(start, i);
+      list = (state.sessions || []).filter(function (s) { return s.date === d && s.disposition === 'kept'; }).sort(PT.compareSessions);
+      label = prettyDate(d) + (d === state.today ? ' · Today' : '');
+      body += '<div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + list.length + '</span></div>';
+      if (!list.length) body += '<div class="meta" style="margin:0 2px 8px">Nothing</div>';
+      list.forEach(function (s) { body += sessionButton(s); });
+    }
+    return shell('Week', body, '');
+  }
+
+  function clientsScreen() {
+    var body = '<button type="button" class="primary" data-act="new-client">Add a client</button>';
+    var list = (state.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    if (!list.length) body += '<div class="card empty">No clients yet.</div>';
+    list.forEach(function (c) { body += clientButton(c); });
+    return shell('Clients', body, '');
+  }
+
+  function clientScreen(id) {
+    var c = clientById(id);
+    if (!c) return shell('Client', '<div class="card empty">That client is not here.</div>', '#clients');
+    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
+    var body = '<div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
+      '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + st.remaining + '<small>left</small></div>' +
+      '<p class="meta" style="margin-top:8px">' + st.used + ' of ' + st.total + ' used · ' + esc(money(st.remainingValue)) + ' left</p>' +
+      '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Package</span></div><div class="stat"><b>' + esc(money(st.perSession)) + '</b><span>Per session</span></div></div>' +
+      '<p class="meta">Started ' + esc(c.startDate ? prettyDate(c.startDate) : 'whenever you say') + '</p>' +
+      '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div>';
+    var packages = PT.sortPackages(c.packages || []);
+    if (packages.length > 1) {
+      body += '<h2>History</h2>';
+      packages.forEach(function (pkg) {
+        var used = PT.packageUsed(c, state.sessions, pkg, state.clients);
+        var current = PT.currentPackage(c.packages);
+        body += '<div class="card"><b>' + (current && current.id === pkg.id ? 'Current package' : 'Earlier package') + '</b><div class="meta" style="margin-top:4px">' + used + ' of ' + esc(pkg.sessions) + ' used · ' + esc(money(pkg.value)) + (pkg.startDate ? ' · from ' + esc(prettyDate(pkg.startDate)) : '') + '</div></div>';
+      });
+    }
+    if ((c.aliases || []).length) body += '<h2>Calendar names</h2><div class="card">' + c.aliases.map(function (a) { return esc(a); }).join(', ') + '</div>';
+    var sessions = PT.sessionsForClient(c, state.sessions, state.clients).slice().reverse();
+    body += '<h2>Sessions</h2>';
+    if (!sessions.length) body += '<div class="card empty">No kept sessions yet.</div>';
+    sessions.slice(0, 30).forEach(function (s) { body += sessionButton(s); });
+    var charges = (state.charges || []).filter(function (ch) { return String(ch.clientId) === String(c.id); });
+    body += '<h2>Charges</h2>';
+    if (!charges.length) body += '<div class="card empty">No AED charges.</div>';
+    charges.forEach(function (ch) { body += chargeRow(ch); });
+    body += '<button type="button" class="ghost" data-act="add-charge" data-id="' + esc(c.id) + '">Add an AED charge</button>';
+    body += '<button type="button" class="danger" data-act="ask-delete" data-id="' + esc(c.id) + '">Remove client</button>';
+    return shell('', body, '#clients');
+  }
+
+  function chargeRow(ch) {
+    var c = clientById(ch.clientId);
+    return '<div class="card"><div class="spread"><b>' + esc(c ? c.name : 'Client') + '</b><b>' + esc(money(ch.amount)) + '</b></div>' +
+      '<div class="meta" style="margin-top:4px">' + esc(chargeLabel(ch.type)) + ' · ' + esc(prettyDate(ch.date)) + '</div>' +
+      (ch.notes ? '<div class="note">' + esc(ch.notes) + '</div>' : '') +
+      '<button type="button" class="ghost small" data-act="delete-charge" data-id="' + esc(ch.id) + '" style="margin-top:8px">Remove</button></div>';
+  }
+
+  function reportScreen() {
+    var period = viewPeriod();
+    var billable = PT.periodBillable(state.clients, state.sessions, period, state.today);
+    var revenue = PT.periodSessionRevenue(state.clients, state.sessions, period, state.today);
+    var chargeTotal = PT.periodChargeTotal(state.charges, period, state.today);
+    var est = PT.commissionEstimate({
+      sessionRevenue: revenue,
+      chargeTotal: chargeTotal,
+      sessionCount: billable.length,
+      comm: state.settings
+    });
+    var body = '';
+    if (period.custom) {
+      body += '<div class="banner">Using your dates: ' + esc(period.label) + '</div>';
+    } else {
+      body += '<div class="weekbar"><button type="button" class="ghost small" data-act="month" data-id="-1">Previous</button><b>' + esc(period.label) + '</b><button type="button" class="ghost small" data-act="month" data-id="1">Next</button></div>';
+    }
+    body += '<div class="card" style="margin-top:12px"><div class="meta">Sessions counted</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + billable.length + '</div><p class="meta">Free sessions are not counted. ' + esc(money(revenue)) + ' of package value.</p></div>';
+    if (state.settings.showCommission !== false) {
+      body += '<div class="card"><div class="spread"><div class="meta">Commission estimate</div><button type="button" class="ghost small" data-act="nav" data-go="#settings">Settings</button></div>' +
+        '<div class="hero-num" style="font-size:40px;color:var(--green);margin:8px 0">' + esc(moneyExact(est.commission)) + '</div>' +
+        '<div class="meta">' + esc(est.tierLabel) + ' · ' + billable.length + ' sessions</div>' +
+        '<div class="grid" style="margin-top:10px"><div class="stat"><b>' + esc(money(est.totalRevenue)) + '</b><span>Revenue</span></div><div class="stat"><b>' + esc(money(est.netRevenue)) + '</b><span>Net</span></div><div class="stat"><b>' + esc(money(est.quota)) + '</b><span>Quota</span></div><div class="stat"><b>' + esc(money(est.commRevenue)) + '</b><span>Above quota</span></div></div></div>';
+    }
+    var rows = (state.clients || []).map(function (c) {
+      var list = PT.sessionsForClient(c, state.sessions, state.clients).filter(function (s) {
+        return PT.inPeriod(s.date, period, state.today);
+      });
+      var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
+      var free = list.length - counted;
+      return { name: c.name, counted: counted, free: free };
+    }).filter(function (r) { return r.counted || r.free; }).sort(function (a, b) { return b.counted - a.counted; });
+    body += '<h2>By client</h2>';
+    if (!rows.length) body += '<div class="card empty">No sessions in these dates.</div>';
+    rows.forEach(function (r) {
+      body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + '</b></div>' +
+        (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</div>';
+    });
+    body += '<button type="button" class="ghost" data-act="nav" data-go="#charges">Charges in AED</button>';
+    return shell('Report', body, '');
+  }
+
+  function chargesScreen() {
+    var total = PT.chargeTotalFor(state.charges);
+    var body = '<div class="card"><div class="meta">All charges</div><div class="hero-num" style="font-size:42px;margin-top:6px">' + esc(money(total)) + '</div></div>';
+    body += '<button type="button" class="primary" data-act="add-charge">Add a charge</button>';
+    var list = (state.charges || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    if (!list.length) body += '<div class="card empty">No charges yet.</div>';
+    list.forEach(function (ch) { body += chargeRow(ch); });
+    return shell('Charges', body, '#report');
+  }
+
+  function reviewScreen() {
+    var items = PT.unmatchedFromSessions(state.sessions, state.clients);
+    var body = '<p class="meta">These names came from the calendar. Match each one once. New sessions with that name will follow.</p>';
+    if (!items.length) body += '<div class="card empty">Every calendar name is matched.</div>';
+    items.forEach(function (item) {
+      var options = '<option value="">Choose a client</option>' + (state.clients || []).map(function (c) {
+        return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>';
+      }).join('');
+      var sample = (state.sessions || []).filter(function (s) { return PT.normName(s.clientName) === item.key && s.note; })[0];
+      body += '<div class="card" data-name="' + esc(item.label) + '"><div class="name">' + esc(item.label) + '</div>' +
+        '<div class="meta" style="margin:4px 0 8px">' + item.count + (item.count === 1 ? ' session' : ' sessions') + (item.ambiguous ? ' · this name matches more than one client' : '') + '</div>' +
+        (sample ? '<div class="note" style="margin-bottom:8px">' + esc(sample.note) + '</div>' : '') +
+        '<select data-field="link">' + options + '</select>' +
+        '<button type="button" class="primary" data-act="link" data-name="' + esc(item.label) + '">Match to this client</button>' +
+        '<label>Sessions in a new package</label><input data-field="sessions" inputmode="numeric" placeholder="12">' +
+        '<label>Package price (AED)</label><input data-field="value" inputmode="decimal" placeholder="4800">' +
+        '<label>Package starts</label><input data-field="start" type="date" value="' + esc(state.today) + '">' +
+        '<button type="button" class="ghost" data-act="create-name" data-name="' + esc(item.label) + '">Save as a new client</button>' +
+        '<button type="button" class="danger" data-act="ignore" data-name="' + esc(item.label) + '">Ignore this name</button></div>';
+    });
+    return shell('Names', body, '#home');
+  }
+
+  function settingsScreen() {
+    var s = state.settings || {};
+    var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div><div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on the report</label>' +
+      '<label class="check"><input data-field="includeCharges" type="checkbox"' + (s.includeCharges ? ' checked' : '') + '> Add AED charges into the commission</label>' +
+      '<label>Monthly quota (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(s.quota || '7758') + '">' +
+      '<label>Net factor (%)</label><input data-field="netFactor" inputmode="decimal" value="' + esc(s.netFactor || '81.63') + '">' +
+      '<p class="meta">Up to 80 sessions 45% · 81–100 is 60% · 101–119 is 65% · 120+ is 70%. Free sessions are not counted.</p>' +
+      '<label>Report start, if you do not want the calendar month</label><input data-field="periodStart" type="date" value="' + esc(s.periodStart || '') + '">' +
+      '<label>Report end</label><input data-field="periodEnd" type="date" value="' + esc(s.periodEnd || '') + '">' +
+      '<button type="button" class="primary" data-act="save-settings">Save</button></div>';
+    body += '<div class="card"><b>Morning email</b><p class="meta">Every day around 5:00 (Dubai time) the planner checks the calendar and emails pedrocerdeira81@gmail.com. The subject is exactly “PT Planner daily sync”.</p>' +
+      '<button type="button" class="ghost" data-act="email">Email today’s summary</button></div>';
+    var migrate = state.webAppUrl ? ('https://pedrocerdeira81-coder.github.io/Pt-planner/migrate.html?app=' + encodeURIComponent(state.webAppUrl)) : '';
+    body += '<div class="card"><b>Clients from the old planner</b><p class="meta">This copies names and packages once. It does not copy sessions, so the calendar will not count them twice.</p>' +
+      (migrate ? '<a href="' + esc(migrate) + '">Bring over old clients</a>' : '<p class="meta">The link appears here after you open the planner from the Google link.</p>') +
+      '</div>';
+    body += '<div class="card"><b>Home screen</b><ol class="steps"><li>Open this planner in Safari.</li><li>Tap the Share button (the square with the arrow).</li><li>Tap Add to Home Screen.</li><li>Leave the name as PT Planner. If you see Open as Web App, leave it on.</li><li>Tap Add, then tap the new icon.</li></ol></div>';
+    if ((state.ignored || []).length) {
+      body += '<h2>Ignored names</h2>';
+      state.ignored.forEach(function (name) {
+        body += '<div class="card spread"><span>' + esc(name) + '</span><button type="button" class="ghost small" data-act="unignore" data-name="' + esc(name) + '">Restore</button></div>';
+      });
+    }
+    return shell('Settings', body, '#home');
+  }
+
+  function openSession(id) {
+    var s = sessionById(id);
+    if (!s) return;
+    var c = PT.findClient(state.clients, s.clientName);
+    ui.error = '';
+    ui.sheet = '<div class="name">' + esc(s.clientName) + '</div><p class="meta">' + esc(prettyDate(s.date)) + ' · ' + esc(prettyTime(s.start, s.allDay)) + '</p>' +
+      (s.note ? '<div class="card" style="box-shadow:none;background:#f6f3ee">' + esc(s.note) + '</div>' : '<p class="meta">No note on the calendar event.</p>') +
+      '<label>Count this session as</label><div class="seg">' +
+      ['normal', 'free', 'charged'].map(function (st) {
+        return '<button type="button" data-act="status" data-id="' + esc(s.eventId) + '" data-status="' + st + '"' + (s.status === st ? ' class="on"' : '') + '>' + statusLabel(st) + '</button>';
+      }).join('') + '</div>' +
+      '<p class="meta">Free does not use a package session. Normal and charged do.</p>' +
+      (c ? '<button type="button" class="ghost" data-act="add-charge" data-id="' + esc(c.id) + '" data-event="' + esc(s.eventId) + '" data-date="' + esc(s.date) + '">Add an AED charge</button>' : '') +
+      '<button type="button" class="danger" data-act="hide" data-id="' + esc(s.eventId) + '">Hide this session</button>';
+    render();
+  }
+
+  function openClientForm(c) {
+    ui.error = '';
+    var pkg = c ? PT.currentPackage(c.packages) : null;
+    ui.sheet = '<div class="name">' + (c ? 'Fix package' : 'New client') + '</div>' +
+      '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
+      '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg ? pkg.sessions : '') + '">' +
+      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg ? pkg.value : '') + '">' +
+      '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
+      '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
+    render();
+  }
+
+  function openRenew(id) {
+    var c = clientById(id);
+    if (!c) return;
+    ui.error = '';
+    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Sessions on or after the new start date use the new package.</p>' +
+      '<label>Sessions</label><input data-field="sessions" inputmode="numeric" placeholder="12">' +
+      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" placeholder="4800">' +
+      '<label>Starts</label><input data-field="start" type="date" value="' + esc(state.today) + '">' +
+      '<button type="button" class="primary" data-act="save-renew" data-id="' + esc(c.id) + '">Save renewal</button>';
+    render();
+  }
+
+  function openCharge(clientId, eventId, date) {
+    ui.error = '';
+    var options = '<option value="">Choose a client</option>' + (state.clients || []).map(function (c) {
+      return '<option value="' + esc(c.id) + '"' + (String(c.id) === String(clientId) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+    }).join('');
+    ui.sheet = '<div class="name">AED charge</div>' +
+      '<label>Client</label><select data-field="clientId">' + options + '</select>' +
+      '<label>Amount (AED)</label><input data-field="amount" inputmode="decimal" placeholder="200">' +
+      '<label>Type</label><select data-field="type"><option value="late_cancel">Late cancel</option><option value="no_show">No show</option><option value="other">Other</option></select>' +
+      '<label>Date</label><input data-field="date" type="date" value="' + esc(date || state.today) + '">' +
+      '<label>Note</label><input data-field="notes" placeholder="Optional">' +
+      '<button type="button" class="primary" data-act="save-charge" data-event="' + esc(eventId || '') + '">Save charge</button>';
+    render();
+  }
+
+  function openDelete(id) {
+    var c = clientById(id);
+    if (!c) return;
+    ui.sheet = '<div class="name">Remove ' + esc(c.name) + '?</div><p class="meta">Their calendar sessions stay, but they will need a name match again. Charges for them are removed.</p>' +
+      '<button type="button" class="danger" data-act="delete-client" data-id="' + esc(id) + '">Remove</button>' +
+      '<button type="button" class="ghost" data-act="close">Keep</button>';
+    render();
+  }
+
+  function showError(message) {
+    ui.error = message || 'Try again.';
+    var box = document.getElementById('form-error');
+    if (box && ui.sheet) { box.textContent = ui.error; return; }
+    render();
+  }
+
+  function afterSave(next) {
+    state = next;
+    ui.error = '';
+    ui.sheet = null;
+    ui.loading = false;
+    render();
+  }
+
+  function localAct(name, args) {
+    var a = args[0] || {};
+    if (name === 'apiSyncNow') {
+      state.lastSync = state.today + ' 05:04 Asia/Dubai';
+      ui.toast = 'Example calendar is already loaded.';
+      return;
+    }
+    if (name === 'apiEmailSummary') {
+      ui.toast = 'Example only. No email was sent.';
+      return;
+    }
+    if (name === 'apiSetStatus') state.sessions = PT.setStatus(state.sessions, a.eventId, a.status);
+    else if (name === 'apiHide') state.sessions = PT.hideSession(state.sessions, a.eventId).filter(function (s) { return !s.hidden; });
+    else if (name === 'apiMap') {
+      if (a.action === 'ignore') {
+        var ig = PT.ignoreName(state.ignored, state.sessions, a.name);
+        state.ignored = ig.ignored;
+        state.sessions = ig.sessions.filter(function (s) { return s.disposition !== 'ignored'; });
+      } else if (a.action === 'create') {
+        state.clients = PT.createClient(state.clients, a);
+        var created = state.clients[state.clients.length - 1];
+        var made = PT.linkName(state.clients, state.sessions, created.id, a.name);
+        state.clients = made.clients;
+        state.sessions = made.sessions;
+      } else {
+        var linked = PT.linkName(state.clients, state.sessions, a.clientId, a.name);
+        state.clients = linked.clients;
+        state.sessions = linked.sessions;
+      }
+    } else if (name === 'apiSaveClient') {
+      if (!a.id) state.clients = PT.createClient(state.clients, a);
+      else if (a.mode === 'renew') {
+        state.clients = state.clients.map(function (c) { return String(c.id) === String(a.id) ? PT.renewPackage(c, a) : c; });
+      } else {
+        state.clients = state.clients.map(function (c) {
+          if (String(c.id) !== String(a.id)) return c;
+          var next = PT.updateCurrentPackage(c, a);
+          if (a.name && PT.normName(a.name) !== PT.normName(next.name)) next = PT.renameClient([next], a.id, a.name)[0];
+          return next;
+        });
+      }
+    } else if (name === 'apiDeleteClient') {
+      var removed = PT.deleteClient(state.clients, state.sessions, a.id);
+      state.clients = removed.clients;
+      state.sessions = removed.sessions.filter(function (s) { return s.disposition !== 'ignored'; });
+      state.charges = (state.charges || []).filter(function (ch) { return String(ch.clientId) !== String(a.id); });
+      if (route().name === 'client') location.hash = '#clients';
+    } else if (name === 'apiSaveCharge') {
+      var amount = Number(a.amount);
+      if (!isFinite(amount) || amount < 0) throw new Error('Enter an amount in AED, or 0.');
+      if (!a.clientId) throw new Error('Choose a client.');
+      state.charges = (state.charges || []).concat([PT.migrateCharge({
+        id: 'ch' + Date.now(),
+        clientId: a.clientId,
+        eventId: a.eventId || '',
+        type: a.type || 'other',
+        amount: amount,
+        date: a.date || state.today,
+        notes: a.notes || '',
+        createdAt: state.today
+      })]);
+    } else if (name === 'apiDeleteCharge') {
+      state.charges = (state.charges || []).filter(function (ch) { return String(ch.id) !== String(a.id); });
+    } else if (name === 'apiSaveSettings') {
+      if ((a.periodStart && !a.periodEnd) || (!a.periodStart && a.periodEnd)) throw new Error('Enter both dates, or clear both.');
+      if (a.periodStart && a.periodEnd && a.periodEnd < a.periodStart) throw new Error('The end date is before the start date.');
+      var comm = PT.normalizeComm(a);
+      comm.periodStart = a.periodStart || '';
+      comm.periodEnd = a.periodEnd || '';
+      state.settings = comm;
+    } else if (name === 'apiUnignore') {
+      var key = PT.normName(a.name);
+      state.ignored = (state.ignored || []).filter(function (n) { return PT.normName(n) !== key; });
+    }
+  }
+
+  function call(name, args) {
+    return new Promise(function (resolve, reject) {
+      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (err) {
+        reject(new Error((err && err.message) || 'Could not reach PT Planner.'));
+      });
+      runner[name].apply(runner, args || []);
+    });
+  }
+
+  function go(name, args) {
+    try {
+      if (EXAMPLE) {
+        localAct(name, args || [{}]);
+        ui.error = '';
+        ui.sheet = null;
+        render();
+        if (ui.toast) {
+          var note = ui.toast;
+          ui.toast = '';
+          var el = document.createElement('div');
+          el.className = 'banner';
+          el.style.position = 'fixed';
+          el.style.left = '16px';
+          el.style.right = '16px';
+          el.style.bottom = '96px';
+          el.style.zIndex = '30';
+          el.textContent = note;
+          document.body.appendChild(el);
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 2200);
+        }
+        return;
+      }
+      ui.loading = true;
+      call(name, args).then(afterSave).catch(function (err) { ui.loading = false; showError(err.message); });
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  function onClick(e) {
+    var el = e.target.closest('[data-act]');
+    if (!el) return;
+    var act = el.getAttribute('data-act');
+    if (act === 'stop') return;
+    if (act === 'close') { ui.sheet = null; ui.error = ''; render(); return; }
+    if (act === 'nav') {
+      ui.sheet = null;
+      var dest = el.getAttribute('data-go');
+      if (location.hash !== dest) location.hash = dest;
+      else render();
+      return;
+    }
+    if (act === 'week') { ui.weekOffset = (ui.weekOffset || 0) + Number(el.getAttribute('data-id') || 0); render(); return; }
+    if (act === 'month') { ui.monthOffset = (ui.monthOffset || 0) + Number(el.getAttribute('data-id') || 0); render(); return; }
+    if (act === 'session') { openSession(el.getAttribute('data-id')); return; }
+    if (act === 'open-client') { location.hash = '#client/' + encodeURIComponent(el.getAttribute('data-id')); return; }
+    if (act === 'sync') { go('apiSyncNow', [{}]); return; }
+    if (act === 'email') { go('apiEmailSummary', [{}]); return; }
+    if (act === 'status') { go('apiSetStatus', [{ eventId: el.getAttribute('data-id'), status: el.getAttribute('data-status') }]); return; }
+    if (act === 'hide') { go('apiHide', [{ eventId: el.getAttribute('data-id') }]); return; }
+    if (act === 'new-client') { openClientForm(null); return; }
+    if (act === 'fix') { openClientForm(clientById(el.getAttribute('data-id'))); return; }
+    if (act === 'renew') { openRenew(el.getAttribute('data-id')); return; }
+    if (act === 'save-client' || act === 'save-renew') {
+      var root = el.closest('.sheet');
+      go('apiSaveClient', [{
+        id: el.getAttribute('data-id'),
+        mode: act === 'save-renew' ? 'renew' : 'edit',
+        name: field('name', root),
+        sessions: field('sessions', root),
+        value: field('value', root),
+        startDate: field('start', root)
+      }]);
+      return;
+    }
+    if (act === 'ask-delete') { openDelete(el.getAttribute('data-id')); return; }
+    if (act === 'delete-client') { go('apiDeleteClient', [{ id: el.getAttribute('data-id') }]); return; }
+    if (act === 'add-charge') { ui.sheet = null; openCharge(el.getAttribute('data-id'), el.getAttribute('data-event'), el.getAttribute('data-date')); return; }
+    if (act === 'save-charge') {
+      var box = el.closest('.sheet');
+      go('apiSaveCharge', [{
+        clientId: field('clientId', box),
+        amount: field('amount', box),
+        type: field('type', box),
+        date: field('date', box),
+        notes: field('notes', box),
+        eventId: el.getAttribute('data-event') || ''
+      }]);
+      return;
+    }
+    if (act === 'delete-charge') { go('apiDeleteCharge', [{ id: el.getAttribute('data-id') }]); return; }
+    if (act === 'link' || act === 'ignore' || act === 'create-name') {
+      var card = el.closest('.card');
+      var name = el.getAttribute('data-name');
+      if (act === 'ignore') { go('apiMap', [{ action: 'ignore', name: name }]); return; }
+      if (act === 'link') {
+        var clientId = field('link', card);
+        if (!clientId) { showError('Choose a client.'); return; }
+        go('apiMap', [{ action: 'link', name: name, clientId: clientId }]);
+        return;
+      }
+      go('apiMap', [{
+        action: 'create',
+        name: name,
+        sessions: field('sessions', card),
+        value: field('value', card),
+        startDate: field('start', card) || state.today
+      }]);
+      return;
+    }
+    if (act === 'save-settings') {
+      go('apiSaveSettings', [{
+        showCommission: field('showCommission'),
+        includeCharges: field('includeCharges'),
+        quota: field('quota'),
+        netFactor: field('netFactor'),
+        periodStart: field('periodStart'),
+        periodEnd: field('periodEnd')
+      }]);
+      return;
+    }
+    if (act === 'unignore') { go('apiUnignore', [{ name: el.getAttribute('data-name') }]); return; }
+  }
+
+  function render() {
+    var root = document.getElementById('app');
+    if (!EXAMPLE && !state && ui.fatal) {
+      root.innerHTML = '<div class="app fatal"><div><div class="brand">PT <span>Planner</span></div><p>' + esc(ui.fatal) + '</p><p class="meta">Open the link in Safari while you are signed in to the same Google account that owns the sheet. The deployment must say Execute as Me and Who has access: Only myself.</p></div></div>';
+      return;
+    }
+    if (!state) {
+      root.innerHTML = '<div class="app loading"><div class="brand">PT <span>Planner</span></div></div>';
+      return;
+    }
+    var r = route();
+    var html = '';
+    if (r.name === 'week') html = weekScreen();
+    else if (r.name === 'clients') html = clientsScreen();
+    else if (r.name === 'client') html = clientScreen(r.id);
+    else if (r.name === 'report') html = reportScreen();
+    else if (r.name === 'charges') html = chargesScreen();
+    else if (r.name === 'review') html = reviewScreen();
+    else if (r.name === 'settings') html = settingsScreen();
+    else html = homeScreen();
+    root.innerHTML = html;
+  }
+
+  function readBoot() {
+    var el = document.getElementById('boot-data');
+    if (!el) return null;
+    var text = (el.textContent || '').replace(/^\s+|\s+$/g, '');
+    if (!text || text === '___PT_BOOT___' || text === 'null') return null;
+    try { return JSON.parse(text); } catch (e) { return null; }
+  }
+
+  function buildExample() {
+    function many(name, dates, start, status, note) {
+      return dates.map(function (date, i) {
+        return {
+          eventId: name.toLowerCase().replace(/\s+/g, '-') + '-' + date,
+          calendarId: 'example',
+          title: name + ' PT',
+          clientName: name,
+          date: date,
+          start: start,
+          end: '08:00',
+          allDay: false,
+          note: note || '',
+          status: status || 'normal',
+          statusLocked: !!(status && status !== 'normal'),
+          disposition: 'kept',
+          hidden: false,
+          removed: false,
+          createdAt: '2026-10-01 05:04'
+        };
+      });
+    }
+    var clients = [
+      PT.migrateClient({ id: 'larissa', name: 'Larissa', packageSessions: '20', packageValue: '7000', startDate: '2026-09-01' }),
+      PT.migrateClient({ id: 'jeremy', name: 'Jeremy', packageSessions: '12', packageValue: '4800', startDate: '2026-08-01' }),
+      PT.migrateClient({
+        id: 'mohammad',
+        name: 'Mohammad family',
+        packages: [
+          { id: 'm-old', sessions: '8', value: '4000', startDate: '2026-01-06' },
+          { id: 'm-now', sessions: '10', value: '5500', startDate: '2026-06-01' }
+        ]
+      }),
+      PT.migrateClient({ id: 'sofia', name: 'Sofia', packageSessions: '16', packageValue: '6400', startDate: '2026-10-01' })
+    ];
+    var sessions = []
+      .concat(many('Larissa', ['2026-09-03', '2026-09-10', '2026-09-17', '2026-10-01', '2026-10-22', '2026-11-05', '2026-11-09', '2026-11-12', '2026-11-16', '2026-11-19', '2026-11-23', '2026-11-26', '2026-11-30'], '07:00'))
+      .concat(many('Jeremy', ['2026-08-04', '2026-08-11', '2026-08-18', '2026-08-25', '2026-09-08', '2026-09-15', '2026-09-29', '2026-10-06', '2026-10-20', '2026-10-27'], '09:00'))
+      .concat(many('Mohammad family', ['2026-01-08', '2026-01-15', '2026-01-22', '2026-02-05', '2026-02-19', '2026-03-05', '2026-03-19', '2026-04-02'], '18:00'))
+      .concat(many('Mohammad family', ['2026-06-04', '2026-06-18', '2026-07-02', '2026-07-16', '2026-08-06', '2026-08-20', '2026-09-10', '2026-10-08', '2026-10-29'], '18:00'))
+      .concat(many('Sofia', ['2026-10-06', '2026-10-13', '2026-10-27', '2026-11-06', '2026-11-10', '2026-11-13', '2026-11-17', '2026-11-20', '2026-11-24'], '08:30'));
+    sessions.push({
+      eventId: 'larissa-today', calendarId: 'example', title: 'Larissa PT', clientName: 'Larissa',
+      date: '2026-11-02', start: '07:00', end: '08:00', allDay: false, note: '', status: 'normal',
+      statusLocked: false, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
+    });
+    sessions.push({
+      eventId: 'jeremy-today', calendarId: 'example', title: 'Jeremy Pt', clientName: 'Jeremy',
+      date: '2026-11-02', start: '09:00', end: '10:00', allDay: false, note: 'Free pra compensar outras sessoes',
+      status: 'free', statusLocked: true, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
+    });
+    sessions.push({
+      eventId: 'mohammad-today', calendarId: 'example', title: 'Mohammad family PT', clientName: 'Mohammad family',
+      date: '2026-11-02', start: '18:00', end: '19:00', allDay: false, note: 'Charged, give back friday',
+      status: 'charged', statusLocked: true, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
+    });
+    sessions.push({
+      eventId: 'sofia-tomorrow', calendarId: 'example', title: 'Sofia PT', clientName: 'Sofia',
+      date: '2026-11-03', start: '08:30', end: '09:30', allDay: false, note: '', status: 'normal',
+      statusLocked: false, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
+    });
+    sessions.push({
+      eventId: 'aurelie-today', calendarId: 'example', title: 'Aurelie', clientName: 'Aurelie',
+      date: '2026-11-02', start: '16:00', end: '17:00', allDay: false, note: 'Nao tem sessoes',
+      status: 'normal', statusLocked: false, disposition: 'pending', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
+    });
+    return {
+      today: '2026-11-02',
+      nowLabel: '2026-11-02 05:04 Asia/Dubai',
+      lastSync: '2026-11-02 05:04 Asia/Dubai',
+      triggerReady: true,
+      triggerError: '',
+      webAppUrl: '',
+      clients: clients,
+      sessions: sessions,
+      charges: [
+        { id: 'ch1', clientId: 'jeremy', eventId: '', type: 'late_cancel', amount: 200, date: '2026-10-28', notes: 'Cancelled 1 hour before', createdAt: '2026-10-28' },
+        { id: 'ch2', clientId: 'sofia', eventId: '', type: 'no_show', amount: 150, date: '2026-10-21', notes: 'Did not arrive', createdAt: '2026-10-21' }
+      ],
+      settings: { quota: '2000', netFactor: '81.63', includeCharges: false, showCommission: true, periodStart: '', periodEnd: '' },
+      ignored: []
+    };
+  }
+
+  document.addEventListener('click', onClick);
+  window.addEventListener('hashchange', function () { ui.sheet = null; render(); });
+
+  if (!EXAMPLE && !(window.google && google.script && google.script.run)) {
+    document.getElementById('app').innerHTML = '<div class="app fatal"><div><div class="brand">PT <span>Planner</span></div><p>Open the Google link on your iPhone. This file is only the screen.</p><p><a href="?example=1#home">View example screens</a></p></div></div>';
+  } else if (EXAMPLE) {
+    state = buildExample();
+    render();
+  } else {
+    ui.loading = true;
+    render();
+    call('apiGetState').then(function (s) {
+      state = s;
+      if (!s.lastSync) return call('apiSyncNow');
+      return s;
+    }).then(function (s) {
+      state = s;
+      ui.loading = false;
+      ui.boot = readBoot();
+      render();
+    }).catch(function (err) {
+      ui.loading = false;
+      ui.fatal = (err && err.message) || 'PT Planner could not open.';
+      render();
+    });
+  }
+})();
+</script>
+</body>
+</html>

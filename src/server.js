@@ -1,0 +1,726 @@
+// Google Apps Script side. Paste together with the rules above, into Code.gs.
+var TZ = 'Asia/Dubai';
+var CLIENT_HEADERS = ['id', 'name', 'aliases', 'packages', 'createdAt'];
+var SESSION_HEADERS = ['eventId', 'calendarId', 'title', 'clientName', 'date', 'start', 'end', 'allDay', 'note', 'status', 'statusLocked', 'disposition', 'hidden', 'removed', 'createdAt'];
+var CHARGE_HEADERS = ['id', 'clientId', 'eventId', 'type', 'amount', 'date', 'notes', 'createdAt'];
+var SETTING_HEADERS = ['key', 'value'];
+
+function doGet(e) {
+  var boot = 'null';
+  try {
+    if (e && e.parameter && e.parameter.migrate) boot = safeJson_(importMigration_(e.parameter.migrate));
+  } catch (err) {
+    boot = safeJson_({ ok: false, error: String(err && err.message || err) });
+  }
+  var html = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  html = html.replace('___PT_BOOT___', boot);
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('PT Planner')
+    .setFaviconUrl('https://pedrocerdeira81-coder.github.io/Pt-planner/icons/apple-touch-icon.png')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function doPost() {
+  return HtmlService.createHtmlOutput('<p>Open PT Planner from its link. Client lists are sent from the bring-over page.</p>').setTitle('PT Planner');
+}
+
+function dailySync() {
+  try {
+    runSync_({ email: 'trigger' });
+  } catch (err) {
+    try {
+      deliver_(PT.buildDailyEmail({
+        ok: false,
+        when: whenLabel_(),
+        error: String(err && err.message || err)
+      }));
+    } catch (ignore) {}
+    throw err;
+  }
+}
+
+function apiGetState() {
+  return withLock_(function () {
+    assertOwner_();
+    ensureSheets_();
+    rememberTrigger_();
+    return publicState_();
+  });
+}
+
+function apiSyncNow() {
+  runSync_({ email: false });
+  return publicState_();
+}
+
+function apiEmailSummary() {
+  runSync_({ email: 'now' });
+  return publicState_();
+}
+
+function apiSaveClient(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    var clients = readClients_();
+    if (!obj.id) {
+      clients = PT.createClient(clients, {
+        name: clip_(obj.name, 80),
+        sessions: obj.sessions,
+        value: obj.value,
+        startDate: clip_(obj.startDate, 10)
+      });
+    } else {
+      clients = mapClient_(clients, obj.id, function (c) {
+        var next = c;
+        if (obj.mode === 'renew') next = PT.renewPackage(c, obj);
+        else next = PT.updateCurrentPackage(c, {
+          sessions: obj.sessions,
+          value: obj.value,
+          startDate: obj.startDate
+        });
+        if (obj.name && PT.normName(obj.name) !== PT.normName(next.name)) {
+          var renamed = PT.renameClient([next], obj.id, clip_(obj.name, 80));
+          next = renamed[0];
+        }
+        return next;
+      });
+    }
+    writeClients_(clients);
+    return publicState_();
+  });
+}
+
+function apiDeleteClient(id) {
+  return withLock_(function () {
+    assertOwner_();
+    var result = PT.deleteClient(readClients_(), readSessionsAll_(), id);
+    writeClients_(result.clients);
+    writeSessions_(result.sessions);
+    var charges = readCharges_().filter(function (ch) { return String(ch.clientId) !== String(id); });
+    writeCharges_(charges);
+    return publicState_();
+  });
+}
+
+function apiMap(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    var name = clip_(obj.name, 80);
+    var clients = readClients_();
+    var sessions = readSessionsAll_();
+    var ignored = readIgnored_();
+    if (obj.action === 'ignore') {
+      var ignoredResult = PT.ignoreName(ignored, sessions, name);
+      writeIgnored_(ignoredResult.ignored);
+      writeSessions_(ignoredResult.sessions);
+    } else if (obj.action === 'create') {
+      clients = PT.createClient(clients, {
+        name: name,
+        sessions: obj.sessions,
+        value: obj.value,
+        startDate: obj.startDate || todayDubai_()
+      });
+      var created = clients[clients.length - 1];
+      var linkedNew = PT.linkName(clients, sessions, created.id, name);
+      writeClients_(linkedNew.clients);
+      writeSessions_(linkedNew.sessions);
+    } else {
+      var linked = PT.linkName(clients, sessions, obj.clientId, name);
+      writeClients_(linked.clients);
+      writeSessions_(linked.sessions);
+    }
+    return publicState_();
+  });
+}
+
+function apiSetStatus(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    writeSessions_(PT.setStatus(readSessionsAll_(), obj.eventId, obj.status));
+    return publicState_();
+  });
+}
+
+function apiHide(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    writeSessions_(PT.hideSession(readSessionsAll_(), obj && obj.eventId));
+    return publicState_();
+  });
+}
+
+function apiSaveCharge(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    var charges = readCharges_();
+    var amount = Number(obj.amount);
+    if (!isFinite(amount) || amount < 0) throw new Error('Enter an amount in AED, or 0.');
+    if (!obj.clientId) throw new Error('Choose a client.');
+    charges.push(PT.migrateCharge({
+      id: PT.uid(),
+      clientId: String(obj.clientId),
+      eventId: obj.eventId ? String(obj.eventId) : '',
+      type: obj.type || 'other',
+      amount: amount,
+      date: clip_(obj.date, 10) || todayDubai_(),
+      notes: clip_(obj.notes, 500),
+      createdAt: nowStamp_()
+    }));
+    writeCharges_(charges);
+    return publicState_();
+  });
+}
+
+function apiDeleteCharge(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    var id = obj && obj.id;
+    writeCharges_(readCharges_().filter(function (ch) { return String(ch.id) !== String(id); }));
+    return publicState_();
+  });
+}
+
+function apiSaveSettings(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    var comm = PT.normalizeComm({
+      quota: obj.quota,
+      netFactor: obj.netFactor,
+      includeCharges: !!obj.includeCharges,
+      showCommission: obj.showCommission !== false && obj.showCommission !== 'false'
+    });
+    if (obj.quota === '' || obj.quota == null) comm.quota = '7758';
+    if (obj.netFactor === '' || obj.netFactor == null) comm.netFactor = '81.63';
+    setSetting_('quota', String(comm.quota));
+    setSetting_('netFactor', String(comm.netFactor));
+    setSetting_('includeCharges', comm.includeCharges ? 'yes' : '');
+    setSetting_('showCommission', comm.showCommission ? 'yes' : 'no');
+    var start = clip_(obj.periodStart, 10);
+    var end = clip_(obj.periodEnd, 10);
+    if ((start && !end) || (!start && end)) throw new Error('Enter both dates, or clear both.');
+    if (start && end && end < start) throw new Error('The end date is before the start date.');
+    setSetting_('periodStart', start);
+    setSetting_('periodEnd', end);
+    return publicState_();
+  });
+}
+
+function apiUnignore(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    var key = PT.normName(obj && obj.name);
+    var ignored = readIgnored_().filter(function (name) { return PT.normName(name) !== key; });
+    writeIgnored_(ignored);
+    var sessions = readSessionsAll_().map(function (s) {
+      if (PT.normName(s.clientName) !== key) return s;
+      if (s.disposition !== 'ignored') return s;
+      var copy = PT.copySession(s);
+      copy.disposition = 'pending';
+      return copy;
+    });
+    writeSessions_(sessions);
+    return publicState_();
+  });
+}
+
+function runSync_(opts) {
+  opts = opts || {};
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('PT Planner is already checking the calendar. Try again in a moment.');
+  try {
+    assertOwner_();
+    ensureSheets_();
+    var today = todayDubai_();
+    var ctx = {
+      clients: readClients_(),
+      ignored: readIgnored_(),
+      windowStart: PT.addDaysYmd(today, -400),
+      windowEnd: PT.addDaysYmd(today, 60),
+      nowStamp: nowStamp_()
+    };
+    var events = fetchEvents_(ctx.windowStart, ctx.windowEnd);
+    var result = PT.applySync(readSessionsAll_(), events, ctx);
+    writeSessions_(result.sessions);
+    setSetting_('lastSync', whenLabel_());
+    setSetting_('triggerError', '');
+    var mail = PT.buildSummary({ clients: ctx.clients, sessions: result.sessions }, today, whenLabel_());
+    if (opts.email === 'now') {
+      deliver_(mail);
+    } else if (opts.email === 'trigger' && getSetting_('lastTriggerEmail') !== today) {
+      deliver_(mail);
+      setSetting_('lastTriggerEmail', today);
+    }
+    rememberTrigger_();
+    return { checked: events.length };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function rememberTrigger_() {
+  try {
+    ensureDailyTrigger_();
+    setSetting_('triggerError', '');
+  } catch (err) {
+    setSetting_('triggerError', String(err && err.message || err));
+  }
+}
+
+function ensureDailyTrigger_() {
+  var props = PropertiesService.getScriptProperties();
+  var want = 'dubai-5am-v1';
+  var triggers = ScriptApp.getProjectTriggers();
+  var daily = [];
+  var i;
+  for (i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'dailySync') daily.push(triggers[i]);
+  }
+  if (props.getProperty('triggerVersion') !== want) {
+    for (i = 0; i < daily.length; i++) ScriptApp.deleteTrigger(daily[i]);
+    daily = [];
+    props.setProperty('triggerVersion', want);
+  }
+  if (!daily.length) {
+    ScriptApp.newTrigger('dailySync')
+      .timeBased()
+      .atHour(5)
+      .nearMinute(0)
+      .everyDays(1)
+      .inTimezone(TZ)
+      .create();
+  } else {
+    for (i = 1; i < daily.length; i++) ScriptApp.deleteTrigger(daily[i]);
+  }
+}
+
+function importMigration_(b64) {
+  assertOwner_();
+  var raw = String(b64 || '');
+  if (!raw || raw.length > 120000) throw new Error('That list is too big to send in one go. Add the clients in the app instead.');
+  var json = Utilities.newBlob(Utilities.base64Decode(padB64_(raw))).getDataAsString('UTF-8');
+  var data = JSON.parse(json);
+  if (!data || typeof data !== 'object' || !Array.isArray(data.clients)) throw new Error('The old planner did not send a client list.');
+  if (data.clients.length > 200) throw new Error('That is more clients than this planner will take in one go.');
+  return withLock_(function () {
+    ensureSheets_();
+    var merged = PT.mergeMigration({
+      clients: readClients_(),
+      charges: readCharges_(),
+      settings: {
+        quota: getSetting_('quota'),
+        netFactor: getSetting_('netFactor'),
+        includeCharges: getSetting_('includeCharges') === '' ? null : getSetting_('includeCharges') === 'yes',
+        showCommission: getSetting_('showCommission') === '' ? null : getSetting_('showCommission') !== 'no',
+        periodStart: getSetting_('periodStart'),
+        periodEnd: getSetting_('periodEnd')
+      }
+    }, {
+      clients: data.clients,
+      charges: data.charges || [],
+      comm: data.comm || {},
+      period: data.period || {}
+    });
+    writeClients_(merged.clients);
+    writeCharges_(merged.charges);
+    var s = merged.settings || {};
+    if (s.quota != null) setSetting_('quota', String(s.quota));
+    if (s.netFactor != null) setSetting_('netFactor', String(s.netFactor));
+    if (s.includeCharges != null) setSetting_('includeCharges', s.includeCharges ? 'yes' : '');
+    if (s.showCommission != null) setSetting_('showCommission', s.showCommission ? 'yes' : 'no');
+    if (s.periodStart) setSetting_('periodStart', s.periodStart);
+    if (s.periodEnd) setSetting_('periodEnd', s.periodEnd);
+    return { ok: true, added: merged.added, skipped: merged.skipped };
+  });
+}
+
+function assertOwner_() {
+  var active = '';
+  var owner = '';
+  try { active = Session.getActiveUser().getEmail() || ''; } catch (e) {}
+  try { owner = Session.getEffectiveUser().getEmail() || ''; } catch (e2) {}
+  if (!owner) throw new Error('PT Planner could not confirm the Google account.');
+  if (!active) throw new Error('This planner is private. Open it in Safari while you are signed in to ' + owner + '.');
+  if (active.toLowerCase() !== owner.toLowerCase()) throw new Error('This planner belongs to ' + owner + '.');
+}
+
+function fetchEvents_(startYmd, endYmd) {
+  var start = Utilities.parseDate(startYmd + ' 00:00:00', TZ, 'yyyy-MM-dd HH:mm:ss');
+  var end = Utilities.parseDate(endYmd + ' 23:59:59', TZ, 'yyyy-MM-dd HH:mm:ss');
+  var calendars = CalendarApp.getAllCalendars();
+  var out = [], i, j;
+  for (i = 0; i < calendars.length; i++) {
+    var cal = calendars[i];
+    var owned = false;
+    try { owned = cal.isOwnedByMe(); } catch (e) { owned = false; }
+    if (!owned) continue;
+    var events = [];
+    try { events = cal.getEvents(start, end); } catch (e2) { continue; }
+    for (j = 0; j < events.length; j++) {
+      var ev = events[j];
+      var type = '';
+      try { type = ev.getEventType ? String(ev.getEventType()) : ''; } catch (e3) { type = ''; }
+      if (type && type !== 'DEFAULT') continue;
+      try {
+        if (ev.getMyStatus && ev.getMyStatus() === CalendarApp.GuestStatus.NO) continue;
+      } catch (e4) {}
+      var title = '';
+      try { title = ev.getTitle() || ''; } catch (e5) { title = ''; }
+      if (/^cancelled:/i.test(title) || /^canceled:/i.test(title)) continue;
+      var allDay = false;
+      try { allDay = !!ev.isAllDayEvent(); } catch (e6) { allDay = false; }
+      var startTime = ev.getStartTime();
+      var endTime = ev.getEndTime();
+      var note = '';
+      try { note = ev.getDescription() || ''; } catch (e7) { note = ''; }
+      note = String(note).replace(/<[^>]+>/g, ' ');
+      note = PT.collapseSpace(note);
+      out.push({
+        eventId: String(ev.getId()),
+        calendarId: String(cal.getId()),
+        title: title,
+        date: Utilities.formatDate(startTime, TZ, 'yyyy-MM-dd'),
+        start: allDay ? '' : Utilities.formatDate(startTime, TZ, 'HH:mm'),
+        end: allDay ? '' : Utilities.formatDate(endTime, TZ, 'HH:mm'),
+        allDay: allDay,
+        note: note
+      });
+    }
+  }
+  return out;
+}
+
+function deliver_(mail) {
+  MailApp.sendEmail({
+    to: mail.to,
+    subject: mail.subject,
+    body: mail.body,
+    name: 'PT Planner'
+  });
+}
+
+function publicState_() {
+  var sessions = readSessionsAll_().filter(function (s) {
+    return !s.removed && !s.hidden && s.disposition !== 'ignored';
+  });
+  var triggerOn = false;
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var i;
+    for (i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === 'dailySync') triggerOn = true;
+    }
+  } catch (e) { triggerOn = false; }
+  var url = '';
+  try { url = ScriptApp.getService().getUrl() || ''; } catch (e2) { url = ''; }
+  return {
+    today: todayDubai_(),
+    nowLabel: whenLabel_(),
+    lastSync: getSetting_('lastSync'),
+    triggerReady: triggerOn,
+    triggerError: getSetting_('triggerError'),
+    webAppUrl: url,
+    clients: readClients_(),
+    sessions: sessions,
+    charges: readCharges_(),
+    settings: phoneSettings_(),
+    ignored: readIgnored_()
+  };
+}
+
+function phoneSettings_() {
+  var show = getSetting_('showCommission');
+  var comm = PT.normalizeComm({
+    quota: getSetting_('quota') || '7758',
+    netFactor: getSetting_('netFactor') || '81.63',
+    includeCharges: getSetting_('includeCharges') === 'yes',
+    showCommission: show === 'no' ? false : true
+  });
+  comm.periodStart = getSetting_('periodStart') || '';
+  comm.periodEnd = getSetting_('periodEnd') || '';
+  return comm;
+}
+
+function ss_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('Open the PT Planner Google Sheet, choose Extensions, then Apps Script, and deploy that script.');
+  return ss;
+}
+
+function ensureSheets_() {
+  var ss = ss_();
+  tab_(ss, 'Clients', CLIENT_HEADERS);
+  tab_(ss, 'Sessions', SESSION_HEADERS);
+  tab_(ss, 'Charges', CHARGE_HEADERS);
+  tab_(ss, 'Settings', SETTING_HEADERS);
+  var first = ss.getSheetByName('Sheet1');
+  if (first && ss.getSheets().length > 1) {
+    var used = false;
+    try { used = first.getLastRow() > 0 && String(first.getRange(1, 1).getValue() || '') !== ''; } catch (e) { used = true; }
+    if (!used) ss.deleteSheet(first);
+  }
+}
+
+function tab_(ss, name, headers) {
+  var sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  return sh;
+}
+
+function readTable_(name) {
+  var sh = ss_().getSheetByName(name);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var values = sh.getDataRange().getValues();
+  var headers = values[0].map(function (h) { return String(h || ''); });
+  var out = [], r, c, obj, empty;
+  for (r = 1; r < values.length; r++) {
+    obj = {};
+    empty = true;
+    for (c = 0; c < headers.length; c++) {
+      obj[headers[c]] = values[r][c];
+      if (values[r][c] !== '' && values[r][c] != null) empty = false;
+    }
+    if (!empty) out.push(obj);
+  }
+  return out;
+}
+
+function writeTable_(name, headers, rows) {
+  var sh = ss_().getSheetByName(name);
+  var values = [headers], i, c, line, v;
+  for (i = 0; i < rows.length; i++) {
+    line = [];
+    for (c = 0; c < headers.length; c++) {
+      v = rows[i][headers[c]];
+      line.push(v == null ? '' : v);
+    }
+    values.push(line);
+  }
+  sh.clear();
+  sh.getRange(1, 1, values.length, headers.length).setNumberFormat('@');
+  sh.getRange(1, 1, values.length, headers.length).setValues(values);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e5f4ec');
+}
+
+function readClients_() {
+  return readTable_('Clients').map(function (row) {
+    var aliases = parseJson_(row.aliases, []);
+    var packages = parseJson_(row.packages, []);
+    return PT.migrateClient({
+      id: row.id,
+      name: row.name,
+      aliases: aliases,
+      packages: packages,
+      packageSessions: row.packageSessions,
+      packageValue: row.packageValue,
+      startDate: asYmd_(row.startDate)
+    });
+  }).filter(function (c) { return c && c.name; });
+}
+
+function writeClients_(clients) {
+  var rows = (clients || []).map(function (c) {
+    var clean = PT.migrateClient(c);
+    return {
+      id: clean.id,
+      name: clean.name,
+      aliases: JSON.stringify(clean.aliases || []),
+      packages: JSON.stringify(clean.packages || []),
+      createdAt: c.createdAt || nowStamp_()
+    };
+  });
+  writeTable_('Clients', CLIENT_HEADERS, rows);
+}
+
+function readSessionsAll_() {
+  return readTable_('Sessions').map(function (row) {
+    if (!row.eventId) return null;
+    return {
+      eventId: String(row.eventId),
+      calendarId: String(row.calendarId || ''),
+      title: String(row.title || ''),
+      clientName: String(row.clientName || ''),
+      date: asYmd_(row.date),
+      start: asHm_(row.start),
+      end: asHm_(row.end),
+      allDay: yes_(row.allDay),
+      note: String(row.note || ''),
+      status: row.status ? String(row.status) : 'normal',
+      statusLocked: yes_(row.statusLocked),
+      disposition: row.disposition ? String(row.disposition) : 'pending',
+      hidden: yes_(row.hidden),
+      removed: yes_(row.removed),
+      createdAt: row.createdAt ? String(row.createdAt) : ''
+    };
+  }).filter(function (s) { return !!s; });
+}
+
+function writeSessions_(sessions) {
+  var rows = (sessions || []).map(function (s) {
+    var c = PT.copySession(s);
+    return {
+      eventId: c.eventId,
+      calendarId: c.calendarId,
+      title: c.title,
+      clientName: c.clientName,
+      date: c.date,
+      start: c.start,
+      end: c.end,
+      allDay: c.allDay ? 'yes' : '',
+      note: c.note,
+      status: c.status,
+      statusLocked: c.statusLocked ? 'yes' : '',
+      disposition: c.disposition,
+      hidden: c.hidden ? 'yes' : '',
+      removed: c.removed ? 'yes' : '',
+      createdAt: c.createdAt
+    };
+  });
+  writeTable_('Sessions', SESSION_HEADERS, rows);
+}
+
+function readCharges_() {
+  return PT.migrateCharges(readTable_('Charges').map(function (row) {
+    return {
+      id: row.id,
+      clientId: row.clientId,
+      eventId: row.eventId,
+      type: row.type,
+      amount: row.amount,
+      date: asYmd_(row.date),
+      notes: row.notes,
+      createdAt: row.createdAt ? String(row.createdAt) : ''
+    };
+  }));
+}
+
+function writeCharges_(charges) {
+  var rows = PT.migrateCharges(charges).map(function (ch) {
+    return {
+      id: ch.id,
+      clientId: ch.clientId,
+      eventId: ch.eventId,
+      type: ch.type,
+      amount: String(ch.amount),
+      date: ch.date,
+      notes: ch.notes,
+      createdAt: ch.createdAt || nowStamp_()
+    };
+  });
+  writeTable_('Charges', CHARGE_HEADERS, rows);
+}
+
+function readIgnored_() {
+  return parseJson_(getSetting_('ignored'), []);
+}
+
+function writeIgnored_(list) {
+  setSetting_('ignored', JSON.stringify(list || []));
+}
+
+function settingsMap_() {
+  var map = {};
+  readTable_('Settings').forEach(function (row) {
+    if (row.key) map[String(row.key)] = row.value == null ? '' : String(row.value);
+  });
+  return map;
+}
+
+function getSetting_(key) {
+  var map = settingsMap_();
+  return map[key] == null ? '' : map[key];
+}
+
+function setSetting_(key, value) {
+  var map = settingsMap_();
+  map[key] = value == null ? '' : String(value);
+  var keys = Object.keys(map);
+  var rows = keys.map(function (k) { return { key: k, value: map[k] }; });
+  writeTable_('Settings', SETTING_HEADERS, rows);
+}
+
+function mapClient_(clients, id, fn) {
+  var found = false;
+  var next = clients.map(function (c) {
+    if (String(c.id) !== String(id)) return c;
+    found = true;
+    return fn(c);
+  });
+  if (!found) throw new Error('That client is not in the planner.');
+  return next;
+}
+
+function parseJson_(text, fallback) {
+  if (text == null || text === '') return fallback;
+  if (typeof text === 'object') return text;
+  try { return JSON.parse(String(text)); } catch (e) { return fallback; }
+}
+
+function yes_(v) {
+  return v === true || v === 'yes' || v === 'true' || v === 1 || v === '1';
+}
+
+function asYmd_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
+  }
+  var s = String(v == null ? '' : v).trim();
+  var m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : (s ? s.slice(0, 10) : '');
+}
+
+function asHm_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, TZ, 'HH:mm');
+  }
+  var s = String(v == null ? '' : v).trim();
+  var m = s.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return '';
+  var h = m[1].length < 2 ? '0' + m[1] : m[1];
+  return h + ':' + m[2];
+}
+
+function todayDubai_() {
+  return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+}
+
+function nowStamp_() {
+  return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+}
+
+function whenLabel_() {
+  return nowStamp_() + ' Asia/Dubai';
+}
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('PT Planner is busy. Try again in a moment.');
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function clip_(s, n) {
+  s = String(s == null ? '' : s).replace(/^\s+|\s+$/g, '');
+  if (s.length > n) return s.slice(0, n);
+  return s;
+}
+
+function padB64_(s) {
+  s = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return s;
+}
+
+function safeJson_(obj) {
+  return JSON.stringify(obj).replace(/</g, '\\u003c');
+}

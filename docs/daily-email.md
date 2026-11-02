@@ -1,0 +1,55 @@
+# Morning email
+
+The 5:00 Asia/Dubai check sends one email to **pedrocerdeira81@gmail.com**. The subject is exactly:
+
+```
+PT Planner daily sync
+```
+
+It is sent from Pedro’s own Gmail by the script, so it lands in his inbox. The assistant reads that inbox. There is no public JSON link. A link the assistant could open with curl would have to be open to anyone who has it, and that would expose client names. The planner itself stays on “Only myself”.
+
+Google starts the job within about 15 minutes of 5:00, not always at 5:00:00. One email is sent per day from the automatic check. Tapping **Email today’s summary** in the gear sends another copy on purpose.
+
+## When it worked
+
+```
+PT Planner daily sync
+Status: ok
+When: 2026-11-02 05:07 Asia/Dubai
+
+Sessions added: 1
+- Jeremy | 2026-11-02 09:00 | free | Free pra compensar outras sessoes
+
+Clients low or out: 1
+- Jeremy | 2 left | low
+
+Flagged notes: 2
+- Jeremy | 2026-11-02 09:00 | free | Free pra compensar outras sessoes
+- Mohammad family | 2026-11-02 18:00 | charged | Charged, give back friday
+
+Unmatched names: 1
+- Aurelie | 1 session
+```
+
+- The first line is always `PT Planner daily sync`.
+- The second line is `Status: ok` or `Status: failed`.
+- `When:` is Dubai time.
+- `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
+- An empty section is `- None`.
+- A line is `Name | date time | normal|free|charged | note`.
+- Low means 1 or 2 sessions left. Out means 0 or fewer. Free sessions do not use up a package. Normal and charged do.
+- Flagged notes are free, charged, or a calendar note such as Charged, free, or “Nao tem sessoes”, for today and the next 7 days.
+- Unmatched names still need a tap in the app. They repeat each morning until they are matched or ignored.
+- Lists stop after 30 lines and then say `and N more`.
+
+## When it failed
+
+```
+PT Planner daily sync
+Status: failed
+When: 2026-11-02 05:07 Asia/Dubai
+
+The automatic check did not finish.
+Error: …
+Open PT Planner on the iPhone and tap Update from Calendar.
+```
