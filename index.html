@@ -2,296 +2,1530 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="PT Planner">
 <meta name="theme-color" content="#f0efe9">
 <title>PT Planner</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#f0efe9;overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+html,body{background:#f0efe9}
+body{overscroll-behavior:none;-webkit-font-smoothing:antialiased}
 input,select,textarea{-webkit-appearance:none;appearance:none;outline:none}
 input[type=date]::-webkit-calendar-picker-indicator{opacity:.35}
 ::-webkit-scrollbar{width:0}
+/* Safe areas keep the header and tab bar clear of the iPhone notch and home indicator. */
+.pt-header{
+  background:#fff;
+  border-bottom:1px solid rgba(0,0,0,0.08);
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:18px 20px 14px;
+  padding-top:calc(18px + constant(safe-area-inset-top));
+  padding-top:calc(18px + env(safe-area-inset-top));
+  padding-left:calc(20px + constant(safe-area-inset-left));
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + constant(safe-area-inset-right));
+  padding-right:calc(20px + env(safe-area-inset-right));
+}
+.pt-header-actions{display:flex;gap:8px;margin-left:auto;flex-shrink:0}
+.pt-main{
+  padding:20px 16px 96px;
+  padding-left:calc(16px + constant(safe-area-inset-left));
+  padding-left:calc(16px + env(safe-area-inset-left));
+  padding-right:calc(16px + constant(safe-area-inset-right));
+  padding-right:calc(16px + env(safe-area-inset-right));
+  padding-bottom:calc(96px + constant(safe-area-inset-bottom));
+  padding-bottom:calc(96px + env(safe-area-inset-bottom));
+}
+.pt-tabs{
+  position:fixed;left:0;right:0;bottom:0;
+  background:#fff;
+  border-top:1px solid rgba(0,0,0,0.08);
+  display:flex;
+  z-index:20;
+  box-shadow:0 -4px 16px rgba(0,0,0,0.06);
+  padding:10px 0 14px;
+  padding-bottom:calc(14px + constant(safe-area-inset-bottom));
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+  padding-left:constant(safe-area-inset-left);
+  padding-left:env(safe-area-inset-left);
+  padding-right:constant(safe-area-inset-right);
+  padding-right:env(safe-area-inset-right);
+}
+.pt-fab{
+  position:fixed;z-index:10;
+  width:56px;height:56px;border-radius:99px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;font-weight:900;cursor:pointer;border:none;
+  bottom:100px;
+  bottom:calc(100px + constant(safe-area-inset-bottom));
+  bottom:calc(100px + env(safe-area-inset-bottom));
+  right:20px;
+  right:calc(20px + constant(safe-area-inset-right));
+  right:calc(20px + env(safe-area-inset-right));
+}
+.pt-overlay{
+  position:fixed;inset:0;z-index:40;
+  background:rgba(0,0,0,0.45);
+  display:flex;align-items:flex-end;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+.pt-sheet{
+  background:#fff;
+  border-radius:26px 26px 0 0;
+  width:100%;
+  max-height:88vh;
+  overflow-y:auto;
+  padding:8px 20px 48px;
+  padding-bottom:calc(48px + constant(safe-area-inset-bottom));
+  padding-bottom:calc(48px + env(safe-area-inset-bottom));
+  padding-left:calc(20px + constant(safe-area-inset-left));
+  padding-left:calc(20px + env(safe-area-inset-left));
+  padding-right:calc(20px + constant(safe-area-inset-right));
+  padding-right:calc(20px + env(safe-area-inset-right));
+}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<script id="pt-logic">
+var PT = (function () {
+  var DAY = 86400000;
+
+  function pad2(n) {
+    n = String(n);
+    return n.length < 2 ? '0' + n : n;
+  }
+  function collapseSpace(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  }
+  function normName(s) {
+    return collapseSpace(s).toLowerCase();
+  }
+  function namesMatch(a, b) {
+    var x = normName(a), y = normName(b);
+    if (!x || !y) return false;
+    return x === y;
+  }
+  function localDateStr(d) {
+    var dt;
+    if (!d) dt = new Date();
+    else if (Object.prototype.toString.call(d) === '[object Date]') dt = d;
+    else dt = new Date(d);
+    if (isNaN(dt.getTime())) return '';
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+  function todayStr() { return localDateStr(new Date()); }
+  function monthStr(now) {
+    var d = now ? new Date(now) : new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1);
+  }
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+  function asAmountString(v) {
+    if (v == null || v === '') return '';
+    return String(v);
+  }
+  function inPeriod(d, period, now) {
+    if (!d) return false;
+    if (!period || !period.start || !period.end) return String(d).indexOf(monthStr(now)) === 0;
+    return String(d) >= String(period.start) && String(d) <= String(period.end);
+  }
+  function getTier(n) {
+    n = Number(n) || 0;
+    if (n >= 120) return 0.70;
+    if (n >= 101) return 0.65;
+    if (n >= 81) return 0.60;
+    return 0.45;
+  }
+  function getTierLabel(n) {
+    n = Number(n) || 0;
+    if (n >= 120) return '120+ \u00b7 70%';
+    if (n >= 101) return '101-119 \u00b7 65%';
+    if (n >= 81) return '81-100 \u00b7 60%';
+    return 'Up to 80 \u00b7 45%';
+  }
+  function normalizePackage(p, fallbackId) {
+    p = p || {};
+    var sessions = (p.sessions != null && p.sessions !== '') ? p.sessions : p.packageSessions;
+    var value = (p.value != null && p.value !== '') ? p.value : p.packageValue;
+    return {
+      id: p.id ? String(p.id) : String(fallbackId || uid()),
+      sessions: asAmountString(sessions),
+      value: asAmountString(value),
+      startDate: p.startDate ? String(p.startDate).slice(0, 10) : ''
+    };
+  }
+  function sortPackages(packages) {
+    var arr = [], list = packages || [], i, j, out = [];
+    for (i = 0; i < list.length; i++) arr.push({p: list[i], i: i});
+    arr.sort(function (a, b) {
+      var as = a.p.startDate || '', bs = b.p.startDate || '';
+      if (as < bs) return -1;
+      if (as > bs) return 1;
+      return a.i - b.i;
+    });
+    for (j = 0; j < arr.length; j++) out.push(arr[j].p);
+    return out;
+  }
+  function currentPackage(packages) {
+    var sorted = sortPackages(packages);
+    if (!sorted.length) return null;
+    return sorted[sorted.length - 1];
+  }
+  function withLegacy(client) {
+    var cur = currentPackage(client.packages);
+    var packages = [], list = client.packages || [], i;
+    for (i = 0; i < list.length; i++) {
+      packages.push({
+        id: String(list[i].id),
+        sessions: list[i].sessions,
+        value: list[i].value,
+        startDate: list[i].startDate
+      });
+    }
+    return {
+      id: String(client.id),
+      name: client.name,
+      aliases: (client.aliases || []).slice(),
+      packages: packages,
+      packageSessions: cur ? cur.sessions : '',
+      packageValue: cur ? cur.value : '',
+      startDate: cur ? cur.startDate : ''
+    };
+  }
+  function migrateClient(c) {
+    if (!c || typeof c !== 'object') return null;
+    var name = collapseSpace(c.name || '');
+    var id = (c.id != null && String(c.id) !== '') ? String(c.id) : uid();
+    var packages = [], i, j, aliases = [], seen = {}, own = normName(name);
+    if (Array.isArray(c.packages) && c.packages.length) {
+      for (i = 0; i < c.packages.length; i++) packages.push(normalizePackage(c.packages[i], id + '-pkg' + (i + 1)));
+    } else {
+      packages.push(normalizePackage({
+        id: id + '-pkg1',
+        sessions: c.packageSessions,
+        value: c.packageValue,
+        startDate: c.startDate
+      }, id + '-pkg1'));
+    }
+    var rawAliases = Array.isArray(c.aliases) ? c.aliases : [];
+    for (j = 0; j < rawAliases.length; j++) {
+      var label = collapseSpace(rawAliases[j]);
+      var n = normName(label);
+      if (!n || n === own || seen[n]) continue;
+      seen[n] = true;
+      aliases.push(label);
+    }
+    if (!name && (c.id == null || String(c.id) === '')) return null;
+    return withLegacy({id: id, name: name, aliases: aliases, packages: packages});
+  }
+  function migrateClients(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [], i, c;
+    for (i = 0; i < list.length; i++) {
+      c = migrateClient(list[i]);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+  function migrateSession(s, i) {
+    if (!s || typeof s !== 'object') return null;
+    var clientName = s.clientName != null ? String(s.clientName) : (s.name != null ? String(s.name) : '');
+    var date = s.date != null ? String(s.date).trim() : '';
+    if (!collapseSpace(clientName) && !date) return null;
+    var title = (s.title != null && String(s.title) !== '') ? String(s.title) : (collapseSpace(clientName) ? collapseSpace(clientName) + ' PT' : 'PT');
+    var id = s.id ? String(s.id) : ('s' + i + '_' + normName(clientName) + '_' + date);
+    return {id: id, title: title, date: date, clientName: clientName};
+  }
+  function migrateSessions(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [], i, s;
+    for (i = 0; i < list.length; i++) {
+      s = migrateSession(list[i], i);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+  function migrateCharge(c) {
+    if (!c || typeof c !== 'object') return null;
+    var amount = 0;
+    if (c.amount != null && c.amount !== '') {
+      var n = Number(c.amount);
+      amount = isFinite(n) && n >= 0 ? n : 0;
+    }
+    return {
+      id: c.id != null ? String(c.id) : uid(),
+      clientId: c.clientId != null ? String(c.clientId) : '',
+      type: c.type ? String(c.type) : 'other',
+      date: c.date ? String(c.date) : '',
+      notes: c.notes != null ? String(c.notes) : '',
+      amount: amount
+    };
+  }
+  function migrateCharges(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [], i, c;
+    for (i = 0; i < list.length; i++) {
+      c = migrateCharge(list[i]);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+  function normalizeComm(c) {
+    c = c || {};
+    return {
+      quota: c.quota != null ? String(c.quota) : '7758',
+      netFactor: c.netFactor != null ? String(c.netFactor) : '81.63',
+      includeCharges: !!c.includeCharges
+    };
+  }
+  function normalizePeriod(p) {
+    p = p || {};
+    return {start: p.start ? String(p.start) : '', end: p.end ? String(p.end) : ''};
+  }
+  function normalizeMeta(m) {
+    m = m || {};
+    var snooze = m.snoozeUntil != null && m.snoozeUntil !== '' ? Number(m.snoozeUntil) : null;
+    return {
+      backupAt: m.backupAt || null,
+      snoozeUntil: snooze && isFinite(snooze) ? snooze : null
+    };
+  }
+  function resolvedNetFactor(comm) {
+    var n = Number(comm && comm.netFactor);
+    if (!n) n = 81.63;
+    return n / 100;
+  }
+  function resolvedQuota(comm) {
+    var n = Number(comm && comm.quota);
+    return n || 0;
+  }
+  function clientsForName(clients, sessionName) {
+    var n = normName(sessionName), out = [], list = clients || [], i, j;
+    if (!n) return out;
+    for (i = 0; i < list.length; i++) {
+      if (normName(list[i].name) === n) { out.push(list[i]); continue; }
+      var aliases = list[i].aliases || [];
+      for (j = 0; j < aliases.length; j++) {
+        if (normName(aliases[j]) === n) { out.push(list[i]); break; }
+      }
+    }
+    return out;
+  }
+  function findClient(clients, sessionName) {
+    var hits = clientsForName(clients, sessionName);
+    return hits.length === 1 ? hits[0] : null;
+  }
+  function sessionCountsFor(client, allClients, sessionName) {
+    if (!client) return false;
+    var owner = findClient(allClients || [client], sessionName);
+    return !!(owner && String(owner.id) === String(client.id));
+  }
+  function packageForDate(packages, date) {
+    var sorted = sortPackages(packages), found = null, i, start;
+    for (i = 0; i < sorted.length; i++) {
+      start = sorted[i].startDate || '';
+      if (start && String(date) < start) break;
+      found = sorted[i];
+    }
+    return found;
+  }
+  function packageWindow(packages, pkg) {
+    var sorted = sortPackages(packages), idx = -1, i, next;
+    for (i = 0; i < sorted.length; i++) {
+      if (String(sorted[i].id) === String(pkg.id)) { idx = i; break; }
+    }
+    next = (idx >= 0 && idx < sorted.length - 1) ? sorted[idx + 1] : null;
+    return {start: (pkg && pkg.startDate) || '', end: next && next.startDate ? next.startDate : ''};
+  }
+  function sessionInWindow(date, w) {
+    if (!date) return false;
+    if (w.start && String(date) < String(w.start)) return false;
+    if (w.end && String(date) >= String(w.end)) return false;
+    return true;
+  }
+  function packageUsed(client, sessions, pkg, allClients) {
+    if (!client || !pkg) return 0;
+    var w = packageWindow(client.packages, pkg), n = 0, list = sessions || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (!sessionCountsFor(client, allClients, list[i].clientName)) continue;
+      if (!sessionInWindow(list[i].date, w)) continue;
+      n++;
+    }
+    return n;
+  }
+  function sessionRate(pkg) {
+    var n = Number(pkg && pkg.sessions);
+    if (!(n > 0)) return 0;
+    return Number(pkg.value || 0) / n;
+  }
+  function rateForSessionDate(packages, date) {
+    var sorted = sortPackages(packages), pkg;
+    if (!sorted.length) return 0;
+    pkg = packageForDate(sorted, date);
+    if (!pkg) pkg = sorted[0];
+    return sessionRate(pkg);
+  }
+  function periodSessionRevenue(clients, sessions, period, now) {
+    var total = 0, list = sessions || [], i, owner;
+    for (i = 0; i < list.length; i++) {
+      if (!inPeriod(list[i].date, period, now)) continue;
+      owner = findClient(clients, list[i].clientName);
+      if (!owner) continue;
+      total += rateForSessionDate(owner.packages, list[i].date);
+    }
+    return total;
+  }
+  function chargeAmount(ch) {
+    var n = Number(ch && ch.amount);
+    return isFinite(n) ? n : 0;
+  }
+  function periodChargeTotal(charges, period, now) {
+    var total = 0, list = charges || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (!inPeriod(list[i].date, period, now)) continue;
+      total += chargeAmount(list[i]);
+    }
+    return total;
+  }
+  function periodChargeTotalFor(charges, clientId, period, now) {
+    var total = 0, list = charges || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i].clientId) !== String(clientId)) continue;
+      if (!inPeriod(list[i].date, period, now)) continue;
+      total += chargeAmount(list[i]);
+    }
+    return total;
+  }
+  function chargeTotalFor(charges, clientId) {
+    var total = 0, list = charges || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (clientId != null && String(list[i].clientId) !== String(clientId)) continue;
+      total += chargeAmount(list[i]);
+    }
+    return total;
+  }
+  function commissionEstimate(opts) {
+    opts = opts || {};
+    var comm = normalizeComm(opts.comm);
+    var sessionRevenue = Number(opts.sessionRevenue) || 0;
+    var chargeTotal = Number(opts.chargeTotal) || 0;
+    var sessionCount = Number(opts.sessionCount) || 0;
+    var totalRevenue = sessionRevenue + (comm.includeCharges ? chargeTotal : 0);
+    var netRevenue = totalRevenue * resolvedNetFactor(comm);
+    var quota = resolvedQuota(comm);
+    var commRevenue = Math.max(0, netRevenue - quota);
+    return {
+      totalRevenue: totalRevenue,
+      netRevenue: netRevenue,
+      quota: quota,
+      commRevenue: commRevenue,
+      commission: commRevenue * getTier(sessionCount),
+      sessionRevenue: sessionRevenue,
+      chargeTotal: chargeTotal,
+      includeCharges: comm.includeCharges
+    };
+  }
+  function sessionsForClient(client, sessions, allClients) {
+    var sorted = sortPackages(client && client.packages), first = sorted[0];
+    var start = first && first.startDate ? first.startDate : '';
+    var out = [], list = sessions || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (!sessionCountsFor(client, allClients || [client], list[i].clientName)) continue;
+      if (start && list[i].date < start) continue;
+      out.push(list[i]);
+    }
+    out.sort(function (a, b) {
+      if (a.date < b.date) return -1;
+      if (a.date > b.date) return 1;
+      return 0;
+    });
+    return out;
+  }
+  function unmatchedNames(sessions, clients) {
+    var map = {}, list = sessions || [], i, n, hits, key;
+    for (i = 0; i < list.length; i++) {
+      n = normName(list[i].clientName);
+      if (!n) continue;
+      hits = clientsForName(clients, list[i].clientName);
+      if (hits.length === 1) continue;
+      if (!map[n]) {
+        map[n] = {key: n, label: collapseSpace(list[i].clientName), count: 0, ambiguous: hits.length > 1};
+      }
+      map[n].count++;
+      if (hits.length > 1) map[n].ambiguous = true;
+    }
+    var out = [];
+    for (key in map) if (Object.prototype.hasOwnProperty.call(map, key)) out.push(map[key]);
+    out.sort(function (a, b) { return b.count - a.count; });
+    return out;
+  }
+  function assertClientName(clients, name, exceptId) {
+    var n = normName(name), list = clients || [], i, j;
+    if (!n) throw new Error('Add a name.');
+    for (i = 0; i < list.length; i++) {
+      if (exceptId != null && String(list[i].id) === String(exceptId)) continue;
+      if (normName(list[i].name) === n) throw new Error('Another client already uses that name.');
+      var aliases = list[i].aliases || [];
+      for (j = 0; j < aliases.length; j++) {
+        if (normName(aliases[j]) === n) throw new Error('Another client already uses that name.');
+      }
+    }
+  }
+  function addAlias(clients, clientId, alias) {
+    var label = collapseSpace(alias), n = normName(label), list = clients || [], owner = null, i, j;
+    if (!n) throw new Error('That name is empty.');
+    for (i = 0; i < list.length; i++) if (String(list[i].id) === String(clientId)) owner = list[i];
+    if (!owner) throw new Error('Choose a client.');
+    if (normName(owner.name) === n) return list;
+    var owned = owner.aliases || [];
+    for (j = 0; j < owned.length; j++) if (normName(owned[j]) === n) return list;
+    for (i = 0; i < list.length; i++) {
+      if (normName(list[i].name) === n) throw new Error(label + ' is already used by another client.');
+      var aliases = list[i].aliases || [];
+      for (j = 0; j < aliases.length; j++) {
+        if (normName(aliases[j]) === n) throw new Error(label + ' is already used by another client.');
+      }
+    }
+    var next = [];
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i].id) !== String(clientId)) { next.push(list[i]); continue; }
+      next.push(withLegacy({
+        id: list[i].id,
+        name: list[i].name,
+        aliases: (list[i].aliases || []).concat([label]),
+        packages: list[i].packages
+      }));
+    }
+    return next;
+  }
+  function removeAlias(clients, clientId, alias) {
+    var list = clients || [], next = [], i;
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i].id) !== String(clientId)) { next.push(list[i]); continue; }
+      next.push(withLegacy({
+        id: list[i].id,
+        name: list[i].name,
+        aliases: (list[i].aliases || []).filter(function (a) { return normName(a) !== normName(alias); }),
+        packages: list[i].packages
+      }));
+    }
+    return next;
+  }
+  function updatePackageById(client, packageId, fields) {
+    var packages = [], list = client.packages || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (String(list[i].id) !== String(packageId)) { packages.push(list[i]); continue; }
+      packages.push(normalizePackage({
+        id: list[i].id,
+        sessions: fields.sessions,
+        value: fields.value,
+        startDate: fields.startDate
+      }, list[i].id));
+    }
+    return withLegacy({id: client.id, name: client.name, aliases: client.aliases || [], packages: packages});
+  }
+  function updateCurrentPackage(client, fields) {
+    var packages = (client.packages && client.packages.length) ? client.packages : [normalizePackage({
+      sessions: '', value: '', startDate: ''
+    }, String(client.id || 'c') + '-pkg1')];
+    var cur = currentPackage(packages);
+    return updatePackageById({id: client.id, name: client.name, aliases: client.aliases || [], packages: packages}, cur.id, fields);
+  }
+  function renewPackage(client, fields) {
+    var cur = currentPackage(client.packages);
+    var sessions = fields && fields.sessions;
+    var start = fields && fields.startDate ? String(fields.startDate) : '';
+    if (sessions == null || sessions === '') throw new Error('Add the number of sessions.');
+    if (!start) throw new Error('Add the start date.');
+    if (cur && cur.startDate && start <= cur.startDate) throw new Error('Use a start date after ' + cur.startDate + '.');
+    var pkg = normalizePackage({id: uid(), sessions: sessions, value: fields.value, startDate: start});
+    var packages = (client.packages || []).concat([pkg]);
+    return withLegacy({id: client.id, name: client.name, aliases: client.aliases || [], packages: packages});
+  }
+  function deleteSessionById(sessions, id) {
+    var removed = false, out = [], list = sessions || [], i;
+    for (i = 0; i < list.length; i++) {
+      if (!removed && String(list[i].id) === String(id)) { removed = true; continue; }
+      out.push(list[i]);
+    }
+    return out;
+  }
+  function mergeSessions(existing, incoming) {
+    var out = migrateSessions(existing), seen = {}, added = 0, i, s, name, date, key;
+    for (i = 0; i < out.length; i++) seen[normName(out[i].clientName) + '|' + out[i].date] = true;
+    var list = incoming || [];
+    for (i = 0; i < list.length; i++) {
+      s = list[i];
+      if (!s) continue;
+      name = collapseSpace(s.clientName || s.name || '');
+      date = s.date ? String(s.date).trim() : '';
+      if (!name || !date) continue;
+      key = normName(name) + '|' + date;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push({
+        id: uid(),
+        title: s.title || (name + ' PT'),
+        date: date,
+        clientName: name
+      });
+      added++;
+    }
+    return {sessions: out, added: added};
+  }
+  function parseImport(text) {
+    var raw = String(text || '').trim().replace(/```json/gi, '').replace(/```/g, '').trim();
+    if (!raw) throw new Error('No data found');
+    var parsed = [], start = raw.indexOf('['), end = raw.lastIndexOf(']');
+    if (start !== -1 && end > start) {
+      try { parsed = JSON.parse(raw.substring(start, end + 1)); } catch (e) { parsed = []; }
+    }
+    if ((!parsed || !parsed.length) && raw.indexOf('|') !== -1) {
+      parsed = raw.split(',').map(function (p) {
+        var part = String(p || '').trim(), idx = part.lastIndexOf('|');
+        if (idx === -1) return null;
+        var name = part.substring(0, idx).trim(), date = part.substring(idx + 1).trim();
+        if (!name || !date) return null;
+        return {title: name + ' PT', date: date, clientName: name};
+      }).filter(function (s) { return !!s; });
+    }
+    if (!Array.isArray(parsed)) parsed = [];
+    var out = [], i, s, name, date;
+    for (i = 0; i < parsed.length; i++) {
+      s = parsed[i];
+      if (!s || typeof s !== 'object') continue;
+      name = collapseSpace(s.clientName || s.name || '');
+      date = s.date ? String(s.date).trim() : '';
+      if (!name || !date) continue;
+      out.push({title: s.title || (name + ' PT'), date: date, clientName: name});
+    }
+    if (!out.length) throw new Error('No data found');
+    return out;
+  }
+  function cleanJsonText(text) {
+    return String(text || '').replace(/^\uFEFF/, '').replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'").trim();
+  }
+  function buildBackup(state) {
+    state = state || {};
+    return {
+      app: 'pt-planner',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      clients: state.clients || [],
+      sessions: state.sessions || [],
+      lastSync: state.lastSync || null,
+      charges: state.charges || [],
+      period: normalizePeriod(state.period),
+      comm: normalizeComm(state.comm)
+    };
+  }
+  function parseBackup(text) {
+    var data;
+    try { data = JSON.parse(cleanJsonText(text)); }
+    catch (e) { throw new Error("That text isn't a PT Planner backup."); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('That backup is missing its data.');
+    var sessions = null, lastSync = data.lastSync || null;
+    if (Array.isArray(data.sessions)) sessions = data.sessions;
+    else if (data.sessions && Array.isArray(data.sessions.s)) {
+      sessions = data.sessions.s;
+      if (!lastSync) lastSync = data.sessions.t || null;
+    }
+    var clients = data.clients, charges = data.charges;
+    if (!Array.isArray(clients) && !Array.isArray(sessions) && !Array.isArray(charges)) {
+      throw new Error('No clients, sessions, or charges were found in that backup.');
+    }
+    return {
+      clients: migrateClients(Array.isArray(clients) ? clients : []),
+      sessions: migrateSessions(Array.isArray(sessions) ? sessions : []),
+      lastSync: lastSync || null,
+      charges: migrateCharges(Array.isArray(charges) ? charges : []),
+      period: normalizePeriod(data.period),
+      comm: normalizeComm(data.comm)
+    };
+  }
+  function shouldRemindBackup(meta, nowMs, hasData) {
+    if (!hasData) return false;
+    meta = meta || {};
+    nowMs = nowMs || Date.now();
+    if (meta.snoozeUntil && nowMs < Number(meta.snoozeUntil)) return false;
+    if (!meta.backupAt) return true;
+    var t = new Date(meta.backupAt).getTime();
+    if (!isFinite(t)) return true;
+    return nowMs - t >= 14 * DAY;
+  }
+
+  return {
+    DAY: DAY,
+    collapseSpace: collapseSpace,
+    normName: normName,
+    namesMatch: namesMatch,
+    localDateStr: localDateStr,
+    todayStr: todayStr,
+    monthStr: monthStr,
+    uid: uid,
+    inPeriod: inPeriod,
+    getTier: getTier,
+    getTierLabel: getTierLabel,
+    normalizePackage: normalizePackage,
+    sortPackages: sortPackages,
+    currentPackage: currentPackage,
+    withLegacy: withLegacy,
+    migrateClient: migrateClient,
+    migrateClients: migrateClients,
+    migrateSession: migrateSession,
+    migrateSessions: migrateSessions,
+    migrateCharge: migrateCharge,
+    migrateCharges: migrateCharges,
+    normalizeComm: normalizeComm,
+    normalizePeriod: normalizePeriod,
+    normalizeMeta: normalizeMeta,
+    resolvedNetFactor: resolvedNetFactor,
+    resolvedQuota: resolvedQuota,
+    clientsForName: clientsForName,
+    findClient: findClient,
+    sessionCountsFor: sessionCountsFor,
+    packageForDate: packageForDate,
+    packageWindow: packageWindow,
+    packageUsed: packageUsed,
+    sessionRate: sessionRate,
+    rateForSessionDate: rateForSessionDate,
+    periodSessionRevenue: periodSessionRevenue,
+    chargeAmount: chargeAmount,
+    periodChargeTotal: periodChargeTotal,
+    periodChargeTotalFor: periodChargeTotalFor,
+    chargeTotalFor: chargeTotalFor,
+    commissionEstimate: commissionEstimate,
+    sessionsForClient: sessionsForClient,
+    unmatchedNames: unmatchedNames,
+    assertClientName: assertClientName,
+    addAlias: addAlias,
+    removeAlias: removeAlias,
+    updatePackageById: updatePackageById,
+    updateCurrentPackage: updateCurrentPackage,
+    renewPackage: renewPackage,
+    deleteSessionById: deleteSessionById,
+    mergeSessions: mergeSessions,
+    parseImport: parseImport,
+    buildBackup: buildBackup,
+    parseBackup: parseBackup,
+    shouldRemindBackup: shouldRemindBackup
+  };
+})();
+if (typeof window !== 'undefined') window.PT = PT;
+if (typeof navigator !== 'undefined' && navigator.serviceWorker && typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('load', function () {
+    try {
+      navigator.serviceWorker.register('./sw.js', {scope: './', updateViaCache: 'none'}).catch(function () {});
+    } catch (e) {
+      try { navigator.serviceWorker.register('./sw.js').catch(function () {}); } catch (e2) {}
+    }
+  });
+}
+</script>
 <script type="text/babel">
-const{useState,useEffect}=React;
-const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const C={
-  bg:'#f0efe9',card:'#ffffff',surface:'#f7f6f2',border:'rgba(0,0,0,0.08)',
-  black:'#111118',charcoal:'#1e1e2a',gold:'#c9973a',goldLight:'#e8b84b',
+const {useState, useEffect, useRef} = React;
+const PT = window.PT;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const C = {
+  bg:'#f0efe9', card:'#ffffff', surface:'#f7f6f2', border:'rgba(0,0,0,0.08)',
+  black:'#111118', charcoal:'#1e1e2a', gold:'#c9973a', goldLight:'#e8b84b',
   gradGold:'linear-gradient(135deg,#c9973a,#e8b84b,#c9973a)',
   gradHero:'linear-gradient(160deg,#111118 0%,#1e1e2a 60%,#2a2438 100%)',
   gradDark:'linear-gradient(135deg,#111118,#1e1e2a)',
   gradWarn:'linear-gradient(135deg,#f59e0b,#fbbf24)',
   gradRed:'linear-gradient(135deg,#dc2626,#ef4444)',
-  green:'#059669',warn:'#d97706',red:'#dc2626',
-  txt:'#111118',mid:'#374151',muted:'#9ca3af',
+  green:'#059669', warn:'#d97706', red:'#dc2626',
+  txt:'#111118', mid:'#374151', muted:'#9ca3af',
   shadow:'0 2px 16px rgba(0,0,0,0.07)',
   shadowGold:'0 8px 28px rgba(201,151,58,0.25)',
   shadowDark:'0 8px 28px rgba(17,17,24,0.18)',
 };
-const store={
-  async get(k){try{const v=localStorage.getItem(k);return v?{value:v}:null;}catch(e){return null;}},
-  async set(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
+const store = {
+  async get(k) { try { const v = localStorage.getItem(k); return v ? {value:v} : null; } catch (e) { return null; } },
+  async set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
 };
-function fmt(iso){try{const d=new Date(iso+'T00:00:00');return MONTHS[d.getMonth()]+' '+d.getDate();}catch(e){return iso;}}
-function todayStr(){return new Date().toISOString().split('T')[0];}
-function monthStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
-function getTier(n){if(n>=120)return 0.70;if(n>=101)return 0.65;if(n>=81)return 0.60;return 0.45;}
-function getTierLabel(n){if(n>=120)return '120+ \u00b7 70%';if(n>=101)return '101-119 \u00b7 65%';if(n>=81)return '81-100 \u00b7 60%';return 'Up to 80 \u00b7 45%';}
-
-function Modal({children,title,onClose}){
-  return(
-    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:40,display:'flex',alignItems:'flex-end',backdropFilter:'blur(6px)'}}>
-      <div style={{background:'#fff',borderRadius:'26px 26px 0 0',padding:'8px 20px 48px',width:'100%',maxHeight:'88vh',overflowY:'auto'}}>
-        <div style={{width:36,height:4,borderRadius:99,background:'#e5e7eb',margin:'12px auto 20px'}}/>
-        <div style={{fontSize:20,fontWeight:900,marginBottom:20,letterSpacing:-0.6,color:'#111118'}}>{title}</div>
+function fmt(iso) {
+  try {
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return iso || '';
+    return MONTHS[d.getMonth()] + ' ' + d.getDate();
+  } catch (e) { return iso || ''; }
+}
+function money(n) {
+  const v = Number(n) || 0;
+  const cents = Math.round(v * 100) % 100;
+  return v.toLocaleString('en', {minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2});
+}
+function money0(n) {
+  return (Number(n) || 0).toLocaleString('en', {maximumFractionDigits: 0});
+}
+function Modal({children, title, onClose}) {
+  return (
+    <div className="pt-overlay" data-ui="modal-overlay" onClick={function (e) { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="pt-sheet">
+        <div style={{width:36, height:4, borderRadius:99, background:'#e5e7eb', margin:'12px auto 20px'}} />
+        <div style={{fontSize:20, fontWeight:900, marginBottom:20, letterSpacing:-0.6, color:'#111118'}}>{title}</div>
         {children}
       </div>
     </div>
   );
 }
-function Lbl({children}){return <div style={{fontSize:11,fontWeight:700,color:'#9ca3af',marginBottom:6,textTransform:'uppercase',letterSpacing:1}}>{children}</div>;}
+function Lbl({children}) {
+  return <div style={{fontSize:11, fontWeight:700, color:'#9ca3af', marginBottom:6, textTransform:'uppercase', letterSpacing:1}}>{children}</div>;
+}
 
-function App(){
-  const[clients,setClients]=useState([]);
-  const[sessions,setSessions]=useState([]);
-  const[charges,setCharges]=useState([]);
-  const[tab,setTab]=useState('dashboard');
-  const[lastSync,setLastSync]=useState(null);
-  const[syncStatus,setSyncStatus]=useState('');
-  const[modal,setModal]=useState(null);
-  const[editId,setEditId]=useState(null);
-  const[form,setForm]=useState({});
-  const[expanded,setExpanded]=useState(null);
-  const[period,setPeriod]=useState({start:'',end:''});
-  const[showPeriod,setShowPeriod]=useState(false);
-  const[showImport,setShowImport]=useState(false);
-  const[importText,setImportText]=useState('');
-  const[viewDate,setViewDate]=useState(todayStr());
-  const[showCommission,setShowCommission]=useState(false);
-  const[commSettings,setCommSettings]=useState({quota:'7758',netFactor:'81.63'});
-  const[loaded,setLoaded]=useState(false);
+function App() {
+  const [clients, setClients] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [charges, setCharges] = useState([]);
+  const [tab, setTab] = useState('dashboard');
+  const [lastSync, setLastSync] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('');
+  const [modal, setModal] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({});
+  const [formError, setFormError] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [period, setPeriod] = useState({start:'', end:''});
+  const [periodDraft, setPeriodDraft] = useState(null);
+  const [showPeriod, setShowPeriod] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [viewDate, setViewDate] = useState(PT.todayStr());
+  const [showCommission, setShowCommission] = useState(false);
+  const [commDraft, setCommDraft] = useState(null);
+  const [commSettings, setCommSettings] = useState(PT.normalizeComm(null));
+  const [loaded, setLoaded] = useState(false);
+  const [meta, setMeta] = useState({backupAt:null, snoozeUntil:null});
+  const [showBackup, setShowBackup] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
+  const [restoreText, setRestoreText] = useState('');
+  const [restorePreview, setRestorePreview] = useState(null);
+  const [showBackupText, setShowBackupText] = useState(false);
+  const [backupJsonShown, setBackupJsonShown] = useState('');
+  const [canShare, setCanShare] = useState(false);
+  const [aliasPick, setAliasPick] = useState({});
+  const [aliasMsg, setAliasMsg] = useState('');
 
-  useEffect(function(){
-    (async function(){
-      try{const r=await store.get('pt-period');if(r)setPeriod(JSON.parse(r.value));}catch(e){}
-      try{const r=await store.get('pt-clients');if(r)setClients(JSON.parse(r.value));}catch(e){}
-      try{const r=await store.get('pt-charges');if(r)setCharges(JSON.parse(r.value));}catch(e){}
-      try{const r=await store.get('pt-sessions');if(r){const d=JSON.parse(r.value);setSessions(d.s||[]);setLastSync(d.t);}}catch(e){}
-      try{const r=await store.get('pt-comm');if(r)setCommSettings(JSON.parse(r.value));}catch(e){}
+  const sessionsRef = useRef([]);
+  const lastSyncRef = useRef(null);
+  const metaRef = useRef(meta);
+  const mergeRef = useRef(null);
+  sessionsRef.current = sessions;
+  lastSyncRef.current = lastSync;
+  metaRef.current = meta;
+  mergeRef.current = function (incoming) {
+    var result = PT.mergeSessions(sessionsRef.current, incoming);
+    var t = new Date().toISOString();
+    sessionsRef.current = result.sessions;
+    lastSyncRef.current = t;
+    setSessions(result.sessions);
+    setLastSync(t);
+    store.set('pt-sessions', JSON.stringify({s:result.sessions, t:t}));
+    setSyncStatus('Added ' + result.added + ' new (' + result.sessions.length + ' total)');
+    setTimeout(function () { setSyncStatus(''); }, 5000);
+    return result;
+  };
+
+  useEffect(function () {
+    (async function () {
+      var nextClients = [];
+      var nextSessions = [];
+      var nextCharges = [];
+      var nextPeriod = {start:'', end:''};
+      var nextComm = PT.normalizeComm(null);
+      var nextSync = null;
+      var nextMeta = {backupAt:null, snoozeUntil:null};
+      try {
+        var rc = await store.get('pt-clients');
+        if (rc && rc.value) {
+          var parsedC = JSON.parse(rc.value);
+          nextClients = PT.migrateClients(parsedC);
+          if (JSON.stringify(nextClients) !== JSON.stringify(parsedC)) await store.set('pt-clients', JSON.stringify(nextClients));
+        }
+      } catch (e) {}
+      try {
+        var rs = await store.get('pt-sessions');
+        if (rs && rs.value) {
+          var parsedS = JSON.parse(rs.value);
+          var rawS = parsedS && Array.isArray(parsedS.s) ? parsedS.s : [];
+          nextSync = parsedS && parsedS.t ? parsedS.t : null;
+          nextSessions = PT.migrateSessions(rawS);
+          if (JSON.stringify(nextSessions) !== JSON.stringify(rawS)) await store.set('pt-sessions', JSON.stringify({s:nextSessions, t:nextSync}));
+        }
+      } catch (e) {}
+      try {
+        var rh = await store.get('pt-charges');
+        if (rh && rh.value) {
+          var parsedH = JSON.parse(rh.value);
+          nextCharges = PT.migrateCharges(parsedH);
+          if (JSON.stringify(nextCharges) !== JSON.stringify(parsedH)) await store.set('pt-charges', JSON.stringify(nextCharges));
+        }
+      } catch (e) {}
+      try {
+        var rp = await store.get('pt-period');
+        if (rp && rp.value) nextPeriod = PT.normalizePeriod(JSON.parse(rp.value));
+      } catch (e) {}
+      try {
+        var rk = await store.get('pt-comm');
+        if (rk && rk.value) {
+          var parsedK = JSON.parse(rk.value);
+          nextComm = PT.normalizeComm(parsedK);
+          if (JSON.stringify(nextComm) !== JSON.stringify(parsedK)) await store.set('pt-comm', JSON.stringify(nextComm));
+        }
+      } catch (e) {}
+      try {
+        var rm = await store.get('pt-meta');
+        if (rm && rm.value) nextMeta = PT.normalizeMeta(JSON.parse(rm.value));
+      } catch (e) {}
+      sessionsRef.current = nextSessions;
+      lastSyncRef.current = nextSync;
+      metaRef.current = nextMeta;
+      setClients(nextClients);
+      setSessions(nextSessions);
+      setCharges(nextCharges);
+      setPeriod(nextPeriod);
+      setCommSettings(nextComm);
+      setLastSync(nextSync);
+      setMeta(nextMeta);
       setLoaded(true);
     })();
-  },[]);
+  }, []);
 
-  useEffect(function(){
-    if(!loaded)return;
-    function handleSync(){
-      const hash=window.location.hash;
-      if(hash.indexOf('#sync=')===0){
-        try{
-          const decoded=atob(hash.replace('#sync=',''));
-          const pairs=decoded.split(',');
-          const imported=pairs.map(function(p){
-            const idx=p.lastIndexOf('|');
-            const name=p.substring(0,idx);
-            const date=p.substring(idx+1);
-            return{title:name+' PT',date:date,clientName:name};
-          }).filter(function(s){return s.date&&s.clientName;});
-          if(imported.length>0){
-            mergeAndSave(imported);
-            window.history.replaceState(null,'',window.location.pathname);
-          }
-        }catch(e){console.error('Sync error',e);}
+  useEffect(function () {
+    try {
+      if (navigator.share && navigator.canShare) {
+        var file = new File(['{}'], 'pt-planner-backup.json', {type:'application/json'});
+        setCanShare(!!navigator.canShare({files:[file]}));
       }
+    } catch (e) {}
+  }, []);
+
+  useEffect(function () {
+    if (!loaded) return;
+    function handleSync() {
+      var hash = window.location.hash;
+      if (hash.indexOf('#sync=') !== 0) return;
+      try {
+        var decoded = atob(hash.replace('#sync=', ''));
+        var imported = PT.parseImport(decoded);
+        mergeRef.current(imported);
+      } catch (e) {
+        setSyncStatus('Could not import that link.');
+        setTimeout(function () { setSyncStatus(''); }, 5000);
+      }
+      window.history.replaceState(null, '', window.location.pathname);
     }
     handleSync();
-    window.addEventListener('hashchange',handleSync);
-    return function(){window.removeEventListener('hashchange',handleSync);};
-  },[loaded,sessions]);
+    window.addEventListener('hashchange', handleSync);
+    return function () { window.removeEventListener('hashchange', handleSync); };
+  }, [loaded]);
 
-  async function saveClients(v){setClients(v);try{await store.set('pt-clients',JSON.stringify(v));}catch(e){}}
-  async function saveCharges(v){setCharges(v);try{await store.set('pt-charges',JSON.stringify(v));}catch(e){}}
-  async function saveSessionsRaw(v,t){setSessions(v);setLastSync(t);try{await store.set('pt-sessions',JSON.stringify({s:v,t:t}));}catch(e){}}
-  async function savePeriod(v){setPeriod(v);try{await store.set('pt-period',JSON.stringify(v));}catch(e){}}
-  async function saveCommSettings(v){setCommSettings(v);try{await store.set('pt-comm',JSON.stringify(v));}catch(e){}}
+  function saveClients(v) {
+    var next = PT.migrateClients(v);
+    setClients(next);
+    store.set('pt-clients', JSON.stringify(next));
+  }
+  function saveCharges(v) {
+    var next = PT.migrateCharges(v);
+    setCharges(next);
+    store.set('pt-charges', JSON.stringify(next));
+  }
+  function savePeriod(v) {
+    var next = PT.normalizePeriod(v);
+    setPeriod(next);
+    store.set('pt-period', JSON.stringify(next));
+  }
+  function saveCommSettings(v) {
+    var next = PT.normalizeComm(v);
+    setCommSettings(next);
+    store.set('pt-comm', JSON.stringify(next));
+  }
+  function saveMeta(m) {
+    var next = PT.normalizeMeta(m);
+    metaRef.current = next;
+    setMeta(next);
+    store.set('pt-meta', JSON.stringify(next));
+  }
+  function markBackup() {
+    saveMeta({backupAt:new Date().toISOString(), snoozeUntil:null});
+  }
+  function snoozeBackup() {
+    saveMeta({backupAt:metaRef.current.backupAt, snoozeUntil:Date.now() + 7 * PT.DAY});
+  }
+  function persistSessions(v, t) {
+    var next = PT.migrateSessions(v);
+    var stamp = arguments.length > 1 ? t : lastSyncRef.current;
+    sessionsRef.current = next;
+    setSessions(next);
+    if (arguments.length > 1) {
+      lastSyncRef.current = t;
+      setLastSync(t);
+    }
+    store.set('pt-sessions', JSON.stringify({s:next, t:stamp || null}));
+  }
+  function f(v) {
+    setFormError('');
+    setForm(function (p) { return Object.assign({}, p, v); });
+  }
+  function closeModal() { setModal(null); setFormError(''); }
 
-  function mergeAndSave(newSessions){
-    const existing=sessions.slice();
-    const seen={};
-    existing.forEach(function(s){seen[(s.clientName||'').toLowerCase().trim()+'|'+s.date]=true;});
-    let added=0;
-    newSessions.forEach(function(s){
-      const key=(s.clientName||'').toLowerCase().trim()+'|'+s.date;
-      if(!seen[key]){existing.push(s);seen[key]=true;added++;}
+  function openPeriod() {
+    setPeriodDraft({start:period.start || '', end:period.end || ''});
+    setShowPeriod(true);
+  }
+  function closePeriod() { setShowPeriod(false); }
+  function savePeriodDraft() {
+    savePeriod({start:(periodDraft && periodDraft.start) || '', end:(periodDraft && periodDraft.end) || ''});
+    setShowPeriod(false);
+  }
+  function resetPeriod() {
+    savePeriod({start:'', end:''});
+    setShowPeriod(false);
+  }
+  function openCommission() {
+    setCommDraft(PT.normalizeComm(commSettings));
+    setShowCommission(true);
+  }
+  function closeCommission() { setShowCommission(false); }
+  function saveCommissionDraft() {
+    saveCommSettings(commDraft || commSettings);
+    setShowCommission(false);
+  }
+
+  function openAdd(m, extra) {
+    setForm(Object.assign({date:PT.todayStr()}, extra || {}));
+    setEditId(null);
+    setFormError('');
+    setModal(m);
+  }
+  function openEdit(c) {
+    var cur = PT.currentPackage(c.packages) || {sessions:'', value:'', startDate:''};
+    setForm({name:c.name, packageSessions:cur.sessions, packageValue:cur.value, startDate:cur.startDate});
+    setEditId(c.id);
+    setFormError('');
+    setModal('client');
+  }
+  function openRenew(c) {
+    setForm({packageSessions:'', packageValue:'', startDate:PT.todayStr()});
+    setEditId(c.id);
+    setFormError('');
+    setModal('renew');
+  }
+  function openEditPackage(c, pkg) {
+    setForm({packageSessions:pkg.sessions, packageValue:pkg.value, startDate:pkg.startDate, packageId:pkg.id});
+    setEditId(c.id);
+    setFormError('');
+    setModal('package');
+  }
+  function openAddSession(extra) {
+    setForm({
+      date:(extra && extra.date) || viewDate || PT.todayStr(),
+      clientId:(extra && extra.clientId) || '',
+      clientName:''
     });
-    saveSessionsRaw(existing,new Date().toISOString());
-    setSyncStatus('Added '+added+' new ('+existing.length+' total)');
-    setTimeout(function(){setSyncStatus('');},5000);
-    return existing;
+    setEditId(null);
+    setFormError('');
+    setModal('session');
+  }
+  function openEditSession(s) {
+    var hits = PT.clientsForName(clients, s.clientName);
+    setForm({
+      date:s.date,
+      clientId:hits.length === 1 ? hits[0].id : '',
+      clientName:PT.collapseSpace(s.clientName)
+    });
+    setEditId(s.id);
+    setFormError('');
+    setModal('session');
+  }
+  function openEditCharge(ch) {
+    setForm({
+      clientId:ch.clientId,
+      type:ch.type || 'late_cancel',
+      date:ch.date || PT.todayStr(),
+      notes:ch.notes || '',
+      amount:ch.amount
+    });
+    setEditId(ch.id);
+    setFormError('');
+    setModal('charge');
   }
 
-  function inPeriod(d){if(!period.start||!period.end)return d&&d.indexOf(monthStr())===0;return d>=period.start&&d<=period.end;}
-  function periodLabel(){if(!period.start||!period.end)return MONTHS[new Date().getMonth()];return fmt(period.start)+' - '+fmt(period.end);}
-  function match(a,b){if(!a||!b)return false;const x=a.toLowerCase().trim(),y=b.toLowerCase().trim();return x.indexOf(y)!==-1||y.indexOf(x)!==-1;}
-
-  const viewSess=sessions.filter(function(s){return s.date===viewDate;});
-  const periodSess=sessions.filter(function(s){return inPeriod(s.date);});
-
-  function clientPeriodCount(c){return periodSess.filter(function(s){return match(c.name,s.clientName);}).length;}
-  function clientTotalUsed(c){
-    return sessions.filter(function(s){
-      if(!match(c.name,s.clientName))return false;
-      if(c.startDate&&s.date<c.startDate)return false;
-      return true;
-    }).length;
+  function saveClient() {
+    var name = PT.collapseSpace(form.name);
+    try { PT.assertClientName(clients, name, editId); }
+    catch (e) { setFormError(e.message); return; }
+    if (!form.packageSessions && form.packageSessions !== 0) { setFormError('Add the number of sessions.'); return; }
+    if (editId) {
+      saveClients(clients.map(function (c) {
+        if (c.id !== editId) return c;
+        var next = PT.updateCurrentPackage(c, {
+          sessions:form.packageSessions,
+          value:form.packageValue,
+          startDate:form.startDate
+        });
+        next.name = name;
+        next.aliases = (c.aliases || []).filter(function (a) { return PT.normName(a) !== PT.normName(name); });
+        return PT.withLegacy(next);
+      }));
+    } else {
+      var client = PT.withLegacy({
+        id:PT.uid(),
+        name:name,
+        aliases:[],
+        packages:[PT.normalizePackage({
+          id:PT.uid(),
+          sessions:form.packageSessions,
+          value:form.packageValue,
+          startDate:form.startDate || ''
+        })]
+      });
+      saveClients(clients.concat([client]));
+    }
+    closeModal();
   }
-  function cCharges(id){return charges.filter(function(c){return c.clientId===id;});}
-  function cChargesTotal(id){return cCharges(id).reduce(function(s,c){return s+Number(c.amount||0);},0);}
-
-  function openAdd(m,extra){setForm(Object.assign({date:todayStr()},extra||{}));setEditId(null);setModal(m);}
-  function openEdit(c){setForm(Object.assign({},c));setEditId(c.id);setModal('client');}
-  function saveClient(){
-    if(!form.name||!form.packageSessions)return;
-    const u=editId?clients.map(function(c){return c.id===editId?Object.assign({},form,{id:editId}):c;}):clients.concat([Object.assign({},form,{id:Date.now()+''})]);
-    saveClients(u);setModal(null);
+  function saveRenew() {
+    var client = null, i;
+    for (i = 0; i < clients.length; i++) if (clients[i].id === editId) client = clients[i];
+    if (!client) return;
+    if (!form.packageSessions && form.packageSessions !== 0) { setFormError('Add the number of sessions.'); return; }
+    if (!form.startDate) { setFormError('Add the start date for the new package.'); return; }
+    var cur = PT.currentPackage(client.packages);
+    if (cur && cur.startDate && form.startDate <= cur.startDate) {
+      setFormError('Pick a start date after ' + fmt(cur.startDate) + ', when the current package began.');
+      return;
+    }
+    try {
+      saveClients(clients.map(function (c) {
+        if (c.id !== editId) return c;
+        return PT.renewPackage(c, {sessions:form.packageSessions, value:form.packageValue, startDate:form.startDate});
+      }));
+      closeModal();
+    } catch (e) { setFormError(e.message || 'Could not renew.'); }
   }
-  function delClient(id){saveClients(clients.filter(function(c){return c.id!==id;}));setModal(null);}
-  function saveCharge(){if(!form.clientId)return;saveCharges(charges.concat([Object.assign({},form,{id:Date.now()+''})]));setModal(null);}
-  function delCharge(id){saveCharges(charges.filter(function(c){return c.id!==id;}));}
-  function f(v){setForm(function(p){return Object.assign({},p,v);});}
+  function savePackageEdit() {
+    if (!form.packageSessions && form.packageSessions !== 0) { setFormError('Add the number of sessions.'); return; }
+    saveClients(clients.map(function (c) {
+      if (c.id !== editId) return c;
+      return PT.updatePackageById(c, form.packageId, {
+        sessions:form.packageSessions,
+        value:form.packageValue,
+        startDate:form.startDate
+      });
+    }));
+    closeModal();
+  }
+  function delClient(id) { saveClients(clients.filter(function (c) { return c.id !== id; })); closeModal(); }
+  function saveCharge() {
+    if (!form.clientId) { setFormError('Choose a client.'); return; }
+    if (form.amount === '' || form.amount == null) { setFormError('Add the amount in AED.'); return; }
+    var amount = Number(form.amount);
+    if (!isFinite(amount) || amount < 0) { setFormError('Amount needs to be a number, like 150.'); return; }
+    var entry = {
+      id:editId || PT.uid(),
+      clientId:form.clientId,
+      type:form.type || 'late_cancel',
+      date:form.date || PT.todayStr(),
+      notes:form.notes || '',
+      amount:amount
+    };
+    if (editId) saveCharges(charges.map(function (c) { return c.id === editId ? entry : c; }));
+    else saveCharges(charges.concat([entry]));
+    closeModal();
+  }
+  function delCharge(id) { saveCharges(charges.filter(function (c) { return c.id !== id; })); }
+  function saveSession() {
+    var client = null, i;
+    for (i = 0; i < clients.length; i++) if (clients[i].id === form.clientId) client = clients[i];
+    if (!client) { setFormError('Choose a client.'); return; }
+    if (!form.date) { setFormError('Choose a date.'); return; }
+    var entry = {id:editId || PT.uid(), title:client.name + ' PT', date:form.date, clientName:client.name};
+    var next, found = false;
+    if (editId) {
+      next = sessions.map(function (s) {
+        if (s.id !== editId) return s;
+        found = true;
+        return entry;
+      });
+      if (!found) next = sessions.concat([entry]);
+    } else next = sessions.concat([entry]);
+    persistSessions(next);
+    closeModal();
+  }
+  function askDeleteSession(s) {
+    var name = PT.collapseSpace(s.clientName) || 'this client';
+    if (!window.confirm('Delete the ' + fmt(s.date) + ' session for ' + name + '?')) return;
+    persistSessions(PT.deleteSessionById(sessionsRef.current, s.id));
+    if (modal === 'session' && editId === s.id) closeModal();
+  }
+  function linkAlias(group) {
+    var clientId = aliasPick[group.key];
+    if (!clientId) { setAliasMsg('Choose which client "' + group.label + '" belongs to.'); return; }
+    try {
+      saveClients(PT.addAlias(clients, clientId, group.label));
+      setAliasMsg('');
+    } catch (e) { setAliasMsg(e.message); }
+  }
 
-  function importSessions(){
-    try{
-      let raw=importText.trim().replace(/```json/g,'').replace(/```/g,'').trim();
-      let parsed=[];
-      const start=raw.indexOf('['),end=raw.lastIndexOf(']');
-      if(start!==-1&&end!==-1){try{parsed=JSON.parse(raw.substring(start,end+1));}catch(e){}}
-      if(parsed.length===0&&raw.indexOf('|')!==-1){
-        parsed=raw.split(',').map(function(p){
-          const idx=p.lastIndexOf('|');
-          if(idx===-1)return null;
-          const name=p.substring(0,idx).trim(),date=p.substring(idx+1).trim();
-          return{title:name+' PT',date:date,clientName:name};
-        }).filter(function(s){return s&&s.date&&s.clientName;});
-      }
-      if(!parsed.length)throw new Error('No data found');
-      mergeAndSave(parsed);
-      setShowImport(false);setImportText('');
-    }catch(e){
-      setSyncStatus('Error: '+e.message);
-      setTimeout(function(){setSyncStatus('');},5000);
+  function importSessions() {
+    try {
+      var parsed = PT.parseImport(importText);
+      mergeRef.current(parsed);
+      setShowImport(false);
+      setImportText('');
+    } catch (e) {
+      setSyncStatus('Error: ' + e.message);
+      setTimeout(function () { setSyncStatus(''); }, 5000);
     }
   }
 
-  const chargeLabels={late_cancel:'Late Cancel',no_show:'No Show',other:'Other'};
-  const inp={background:C.surface,border:'1.5px solid '+C.border,borderRadius:14,padding:'14px 16px',color:C.txt,fontSize:15,width:'100%',marginBottom:12,boxSizing:'border-box',fontFamily:'inherit',fontWeight:500};
-  const goldBtn={backgroundImage:C.gradGold,color:C.black,border:'none',borderRadius:14,padding:'16px',width:'100%',fontSize:15,fontWeight:800,cursor:'pointer',marginTop:8,boxShadow:C.shadowGold};
-  const ghostBtn={background:'transparent',color:C.charcoal,border:'1.5px solid rgba(0,0,0,0.15)',borderRadius:14,padding:'14px',width:'100%',fontSize:14,fontWeight:600,cursor:'pointer',marginTop:8};
-  const primaryBtn={backgroundImage:C.gradDark,color:'#fff',border:'none',borderRadius:14,padding:'16px',width:'100%',fontSize:15,fontWeight:700,cursor:'pointer',marginTop:8,boxShadow:C.shadowDark};
-
-  const totalRevenue=clients.reduce(function(sum,c){
-    const ps=Number(c.packageSessions)>0?(Number(c.packageValue)/Number(c.packageSessions)):0;
-    return sum+(clientPeriodCount(c)*ps);
-  },0);
-  const netFactor=(Number(commSettings.netFactor)||81.63)/100;
-  const netRevenue=totalRevenue*netFactor;
-  const quota=Number(commSettings.quota)||0;
-  const commRevenue=Math.max(0,netRevenue-quota);
-  const commission=commRevenue*getTier(periodSess.length);
-
-  if(!loaded){
-    return <div style={{background:C.bg,minHeight:'100dvh',display:'flex',alignItems:'center',justifyContent:'center',color:C.muted}}>Loading...</div>;
+  function backupObject() {
+    return PT.buildBackup({
+      clients:clients,
+      sessions:sessions,
+      lastSync:lastSync,
+      charges:charges,
+      period:period,
+      comm:commSettings
+    });
+  }
+  function backupJson() { return JSON.stringify(backupObject(), null, 2); }
+  function openBackup() {
+    setBackupMsg('');
+    setRestorePreview(null);
+    setShowBackup(true);
+  }
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {}
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.width = '100%';
+      ta.style.height = '80px';
+      ta.style.fontSize = '16px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e2) { return false; }
+  }
+  async function onCopyBackup() {
+    var json = backupJson();
+    var ok = await copyText(json);
+    if (ok) {
+      markBackup();
+      setBackupMsg('Copied. Paste it into Restore on the phone you want, then tap Replace.');
+    } else {
+      setBackupJsonShown(json);
+      setShowBackupText(true);
+      setBackupMsg('Press and hold the text below, choose Select All, then Copy.');
+    }
+  }
+  function onDownloadBackup() {
+    var json = backupJson();
+    var blob = new Blob([json], {type:'application/json'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'pt-planner-backup-' + PT.todayStr() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    markBackup();
+    setBackupMsg('Download started. On iPhone, Copy backup is the sure way if the file only opens on screen.');
+  }
+  async function onShareBackup() {
+    var json = backupJson();
+    var file = new File([json], 'pt-planner-backup-' + PT.todayStr() + '.json', {type:'application/json'});
+    try {
+      if (navigator.canShare && navigator.canShare({files:[file]})) await navigator.share({files:[file], title:'PT Planner backup'});
+      else if (navigator.share) await navigator.share({title:'PT Planner backup', text:json});
+      else { setBackupMsg('Sharing is not available here. Use Copy backup.'); return; }
+      markBackup();
+      setBackupMsg('Shared. Open Backup in the other copy of PT Planner and restore that file.');
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      setBackupMsg('Sharing did not work. Use Copy backup.');
+    }
+  }
+  function toggleBackupText() {
+    if (showBackupText) { setShowBackupText(false); return; }
+    setBackupJsonShown(backupJson());
+    setShowBackupText(true);
+  }
+  function checkRestore() {
+    try {
+      setRestorePreview(PT.parseBackup(restoreText));
+      setBackupMsg('');
+    } catch (e) {
+      setRestorePreview(null);
+      setBackupMsg(e.message || 'Could not read that backup.');
+    }
+  }
+  function onRestoreFile(e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || '');
+      setRestoreText(text);
+      try {
+        setRestorePreview(PT.parseBackup(text));
+        setBackupMsg('');
+      } catch (err) {
+        setRestorePreview(null);
+        setBackupMsg(err.message || 'Could not read that file.');
+      }
+    };
+    reader.readAsText(file);
+  }
+  function applyRestore() {
+    if (!restorePreview) return;
+    saveClients(restorePreview.clients);
+    persistSessions(restorePreview.sessions, restorePreview.lastSync || null);
+    saveCharges(restorePreview.charges);
+    savePeriod(restorePreview.period);
+    saveCommSettings(restorePreview.comm);
+    markBackup();
+    setRestorePreview(null);
+    setRestoreText('');
+    setShowBackupText(false);
+    setShowBackup(false);
+    setBackupMsg('');
+    setSyncStatus('Backup restored');
+    setTimeout(function () { setSyncStatus(''); }, 4000);
   }
 
-  return(
-    <div style={{background:C.bg,minHeight:'100dvh',color:C.txt,fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif',paddingBottom:96}}>
-      <div style={{background:C.card,borderBottom:'1px solid '+C.border,padding:'18px 20px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div>
-          <div style={{fontSize:22,fontWeight:900,letterSpacing:-0.7,color:C.black}}>
-            PT <span style={{backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>Planner</span>
+  const chargeLabels = {late_cancel:'Late Cancel', no_show:'No Show', other:'Other'};
+  const inp = {background:C.surface, border:'1.5px solid ' + C.border, borderRadius:14, padding:'14px 16px', color:C.txt, fontSize:16, width:'100%', marginBottom:12, boxSizing:'border-box', fontFamily:'inherit', fontWeight:500};
+  const goldBtn = {backgroundImage:C.gradGold, color:C.black, border:'none', borderRadius:14, padding:'16px', width:'100%', fontSize:15, fontWeight:800, cursor:'pointer', marginTop:8, boxShadow:C.shadowGold};
+  const ghostBtn = {background:'transparent', color:C.charcoal, border:'1.5px solid rgba(0,0,0,0.15)', borderRadius:14, padding:'14px', width:'100%', fontSize:14, fontWeight:600, cursor:'pointer', marginTop:8};
+  const primaryBtn = {backgroundImage:C.gradDark, color:'#fff', border:'none', borderRadius:14, padding:'16px', width:'100%', fontSize:15, fontWeight:700, cursor:'pointer', marginTop:8, boxShadow:C.shadowDark};
+  const dangerBtn = {background:'#fff', color:C.red, border:'1.5px solid #fecaca', borderRadius:14, padding:'14px', width:'100%', fontSize:14, fontWeight:800, cursor:'pointer', marginTop:8};
+  const miniBtn = {border:'1px solid rgba(0,0,0,0.12)', background:C.surface, borderRadius:9, padding:'5px 8px', fontSize:11, fontWeight:700, color:C.mid, cursor:'pointer'};
+  const miniDanger = {border:'none', background:'#fee2e2', borderRadius:9, padding:'5px 8px', fontSize:11, fontWeight:700, color:C.red, cursor:'pointer'};
+  const rowBtn = {flex:'1 1 40%', padding:'12px', fontSize:13, border:'1.5px solid ' + C.border, borderRadius:14, background:C.surface, color:C.mid, fontWeight:700, cursor:'pointer'};
+  const rowPrimary = Object.assign({}, primaryBtn, {flex:'1 1 40%', padding:'12px', fontSize:13, marginTop:0});
+
+  const periodSess = sessions.filter(function (s) { return PT.inPeriod(s.date, period); });
+  const viewSess = sessions.filter(function (s) { return s.date === viewDate; });
+  const unmatched = PT.unmatchedNames(sessions, clients);
+  const sessionRevenueTotal = PT.periodSessionRevenue(clients, sessions, period);
+  const periodChargeSum = PT.periodChargeTotal(charges, period);
+  const estimate = PT.commissionEstimate({
+    sessionRevenue:sessionRevenueTotal,
+    chargeTotal:periodChargeSum,
+    sessionCount:periodSess.length,
+    comm:commSettings
+  });
+  const hasData = clients.length + sessions.length + charges.length > 0;
+  const showReminder = PT.shouldRemindBackup(meta, Date.now(), hasData);
+
+  function periodLabel() {
+    if (!period.start || !period.end) return MONTHS[new Date().getMonth()];
+    return fmt(period.start) + ' - ' + fmt(period.end);
+  }
+  function statsFor(c) {
+    var cur = PT.currentPackage(c.packages) || {id:'', sessions:'', value:'', startDate:''};
+    var total = Number(cur.sessions) || 0;
+    var used = PT.packageUsed(c, sessions, cur, clients);
+    var over = total > 0 && used > total ? used - total : 0;
+    var rem = Math.max(0, total - used);
+    var per = total > 0 ? (Number(cur.value || 0) / total) : 0;
+    var periodCount = 0, i;
+    for (i = 0; i < sessions.length; i++) {
+      if (PT.inPeriod(sessions[i].date, period) && PT.sessionCountsFor(c, clients, sessions[i].clientName)) periodCount++;
+    }
+    return {
+      cur:cur, total:total, used:used, rem:rem, over:over, per:per,
+      remVal:Math.max(0, rem * per), periodCount:periodCount,
+      isLow:rem <= 2 && rem > 0, isDone:rem === 0 && total > 0
+    };
+  }
+  function errorLine() {
+    if (!formError) return null;
+    return <div style={{color:C.red, fontSize:13, fontWeight:700, marginBottom:10, lineHeight:1.4}}>{formError}</div>;
+  }
+  function renderCharge(ch) {
+    var amt = PT.chargeAmount(ch);
+    return (
+      <div key={ch.id} style={{background:C.surface, borderRadius:13, padding:'12px 14px', marginBottom:8}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8}}>
+          <div>
+            <div style={{fontSize:13, fontWeight:700}}>{chargeLabels[ch.type] || ch.type}</div>
+            <div style={{fontSize:11, color:C.muted, marginTop:2}}>{ch.date ? fmt(ch.date) : '-'}</div>
           </div>
-          <div style={{fontSize:11,color:C.muted,marginTop:1,fontWeight:500}}>
-            {syncStatus||(lastSync?('Last sync '+fmt(lastSync.split('T')[0])):'Not synced yet')} &middot; {sessions.length} total sessions
+          <div style={{fontSize:14, fontWeight:800, color:amt > 0 ? C.charcoal : C.warn}}>{amt > 0 ? 'AED ' + money(amt) : 'Add amount'}</div>
+        </div>
+        {ch.notes ? <div style={{fontSize:12, color:C.mid, marginTop:8, paddingTop:8, borderTop:'1px solid ' + C.border}}>{ch.notes}</div> : null}
+        <div style={{display:'flex', gap:8, marginTop:10}}>
+          <button data-ui="edit-charge" style={miniBtn} onClick={function () { openEditCharge(ch); }}>Edit</button>
+          <button onClick={function () { delCharge(ch.id); }} style={miniDanger}>Remove</button>
+        </div>
+      </div>
+    );
+  }
+  function knownClient(id) {
+    var i;
+    for (i = 0; i < clients.length; i++) if (clients[i].id === id) return true;
+    return false;
+  }
+  var orphanFees = 0, ci;
+  for (ci = 0; ci < charges.length; ci++) {
+    if (knownClient(charges[ci].clientId)) continue;
+    if (!PT.inPeriod(charges[ci].date, period)) continue;
+    orphanFees += PT.chargeAmount(charges[ci]);
+  }
+
+  if (!loaded) {
+    return <div style={{background:C.bg, minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', color:C.muted, paddingTop:'env(safe-area-inset-top)'}}>Loading...</div>;
+  }
+
+  var syncLabel = syncStatus || (lastSync ? ('Last sync ' + fmt(PT.localDateStr(lastSync))) : 'Not synced yet');
+  var previewCounts = restorePreview ? {
+    clients:restorePreview.clients.length,
+    sessions:restorePreview.sessions.length,
+    charges:restorePreview.charges.length
+  } : null;
+
+  return (
+    <div style={{background:C.bg, minHeight:'100dvh', color:C.txt, fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif'}}>
+      <div className="pt-header">
+        <div>
+          <div style={{fontSize:22, fontWeight:900, letterSpacing:-0.7, color:C.black}}>
+            PT <span style={{backgroundImage:C.gradGold, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text'}}>Planner</span>
+          </div>
+          <div style={{fontSize:11, color:C.muted, marginTop:1, fontWeight:500}}>
+            {syncLabel} &middot; {sessions.length} total sessions
           </div>
         </div>
-        <button onClick={function(){setShowImport(true);}} style={{backgroundImage:C.gradDark,color:'#fff',border:'none',borderRadius:12,padding:'9px 18px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:C.shadowDark}}>Import</button>
+        <div className="pt-header-actions">
+          <button data-ui="backup-open" onClick={openBackup} style={{background:'#fff', color:C.charcoal, border:'1.5px solid rgba(0,0,0,0.15)', borderRadius:12, padding:'8px 12px', fontSize:12, fontWeight:800, cursor:'pointer'}}>Backup</button>
+          <button onClick={function () { setShowImport(true); }} style={{backgroundImage:C.gradDark, color:'#fff', border:'none', borderRadius:12, padding:'9px 14px', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:C.shadowDark}}>Import</button>
+        </div>
       </div>
 
-      <div style={{padding:'20px 16px 0'}}>
-        {tab==='dashboard'&&
+      <div className="pt-main">
+        {tab === 'dashboard' &&
         <div>
-          <div style={{backgroundImage:C.gradHero,borderRadius:24,padding:'26px 24px',marginBottom:16,boxShadow:C.shadowDark,position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:0,left:24,right:24,height:2,backgroundImage:C.gradGold,borderRadius:99}}/>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',position:'relative'}}>
+          {showReminder &&
+          <div style={{background:C.card, borderRadius:18, padding:'16px', marginBottom:14, boxShadow:C.shadow, borderLeft:'3px solid ' + C.gold}}>
+            <div style={{fontSize:14, fontWeight:800, marginBottom:4}}>{meta.backupAt ? 'Time for a fresh backup' : 'Save a backup'}</div>
+            <div style={{fontSize:13, color:C.mid, lineHeight:1.45}}>
+              {meta.backupAt
+                ? ('Last backup was ' + fmt(PT.localDateStr(meta.backupAt)) + '. Save a fresh copy when you can.')
+                : 'You have not saved a backup yet. Your clients live only in this app on this phone.'}
+            </div>
+            <div style={{display:'flex', gap:8, marginTop:12}}>
+              <button onClick={openBackup} style={Object.assign({}, primaryBtn, {flex:1, width:'auto', marginTop:0, padding:'12px', fontSize:13})}>Back up now</button>
+              <button onClick={snoozeBackup} style={Object.assign({}, ghostBtn, {flex:1, width:'auto', marginTop:0, padding:'12px', fontSize:13})}>Remind me later</button>
+            </div>
+          </div>}
+
+          {unmatched.length > 0 &&
+          <div data-ui="unmatched-banner" onClick={function () { setTab('clients'); }} style={{background:C.card, borderRadius:18, padding:'14px 16px', marginBottom:14, boxShadow:C.shadow, borderLeft:'3px solid ' + C.warn, cursor:'pointer'}}>
+            <div style={{fontWeight:800, fontSize:14}}>{unmatched.length} name{unmatched.length === 1 ? '' : 's'} not linked to a client</div>
+            <div style={{fontSize:12, color:C.muted, marginTop:4}}>Tap to link them so those sessions count for the right person.</div>
+          </div>}
+
+          <div style={{backgroundImage:C.gradHero, borderRadius:24, padding:'26px 24px', marginBottom:16, boxShadow:C.shadowDark, position:'relative', overflow:'hidden'}}>
+            <div style={{position:'absolute', top:0, left:24, right:24, height:2, backgroundImage:C.gradGold, borderRadius:99}} />
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', position:'relative'}}>
               <div>
-                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:8}}>{viewDate===todayStr()?'Today':fmt(viewDate)}</div>
-                <div style={{fontSize:62,fontWeight:900,lineHeight:1,letterSpacing:-3,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>{viewSess.length}</div>
-                <div style={{fontSize:12,color:'rgba(255,255,255,0.35)',marginTop:5,fontWeight:600,textTransform:'uppercase'}}>sessions</div>
+                <div style={{fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:2, marginBottom:8}}>{viewDate === PT.todayStr() ? 'Today' : fmt(viewDate)}</div>
+                <div style={{fontSize:62, fontWeight:900, lineHeight:1, letterSpacing:-3, backgroundImage:C.gradGold, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text'}}>{viewSess.length}</div>
+                <div style={{fontSize:12, color:'rgba(255,255,255,0.35)', marginTop:5, fontWeight:600, textTransform:'uppercase'}}>sessions</div>
               </div>
               <div style={{textAlign:'right'}}>
-                <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:8}}>Period</div>
-                <div style={{fontSize:62,fontWeight:900,lineHeight:1,letterSpacing:-3,color:'#fff'}}>{periodSess.length}</div>
-                <div onClick={function(){setShowPeriod(true);}} style={{fontSize:11,color:'rgba(201,151,58,0.7)',marginTop:5,cursor:'pointer',fontWeight:600}}>{periodLabel()}</div>
+                <div style={{fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:2, marginBottom:8}}>Period</div>
+                <div style={{fontSize:62, fontWeight:900, lineHeight:1, letterSpacing:-3, color:'#fff'}}>{periodSess.length}</div>
+                <div data-ui="period-label" onClick={openPeriod} style={{fontSize:11, color:'rgba(201,151,58,0.7)', marginTop:5, cursor:'pointer', fontWeight:600}}>{periodLabel()}</div>
               </div>
             </div>
           </div>
 
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5}}>Sessions</div>
-            <input type="date" value={viewDate} onChange={function(e){setViewDate(e.target.value);}} style={{background:C.card,border:'1.5px solid '+C.border,borderRadius:10,padding:'6px 12px',color:C.txt,fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:C.shadow}}/>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, gap:8}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.mid, textTransform:'uppercase', letterSpacing:1.5}}>Sessions</div>
+            <div style={{display:'flex', gap:8, alignItems:'center'}}>
+              <button data-ui="add-session" onClick={function () { openAddSession({date:viewDate}); }} style={{background:'transparent', color:C.black, border:'1.5px solid rgba(0,0,0,0.12)', borderRadius:10, padding:'6px 12px', fontSize:12, fontWeight:800, cursor:'pointer'}}>Add</button>
+              <input data-ui="view-date" type="date" value={viewDate} onChange={function (e) { setViewDate(e.target.value); }} style={{background:C.card, border:'1.5px solid ' + C.border, borderRadius:10, padding:'6px 12px', color:C.txt, fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:C.shadow}} />
+            </div>
           </div>
-          {viewSess.length===0
-            ?<div style={{background:C.card,borderRadius:18,padding:'22px',textAlign:'center',color:C.muted,fontSize:13,boxShadow:C.shadow,marginBottom:12}}>No sessions this day</div>
-            :viewSess.map(function(s,i){return(
-              <div key={i} style={{background:C.card,borderRadius:16,padding:'14px 16px',marginBottom:10,boxShadow:C.shadow,display:'flex',alignItems:'center',gap:14}}>
-                <div style={{width:42,height:42,borderRadius:13,backgroundImage:C.gradDark,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19,flexShrink:0}}>💪</div>
-                <div>
-                  <div style={{fontWeight:700,fontSize:15,color:C.txt}}>{s.clientName||s.title}</div>
-                  <div style={{fontSize:12,color:C.muted,marginTop:2}}>{s.title}</div>
+          {viewSess.length === 0
+            ? <div style={{background:C.card, borderRadius:18, padding:'22px', textAlign:'center', color:C.muted, fontSize:13, boxShadow:C.shadow, marginBottom:12}}>No sessions this day</div>
+            : viewSess.map(function (s) {
+              return (
+                <div key={s.id} style={{background:C.card, borderRadius:16, padding:'14px 16px', marginBottom:10, boxShadow:C.shadow, display:'flex', alignItems:'center', gap:10}}>
+                  <div style={{width:42, height:42, borderRadius:13, backgroundImage:C.gradDark, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, flexShrink:0}}>💪</div>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontWeight:700, fontSize:15, color:C.txt}}>{s.clientName || s.title}</div>
+                    <div style={{fontSize:12, color:C.muted, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{s.title}</div>
+                  </div>
+                  <button data-ui="edit-session" style={miniBtn} onClick={function () { openEditSession(s); }}>Edit</button>
+                  <button data-ui="delete-session" style={miniDanger} onClick={function () { askDeleteSession(s); }}>Delete</button>
                 </div>
-              </div>
-            );})
+              );
+            })
           }
 
-          {clients.length>0&&
+          {clients.length > 0 &&
           <div>
-            <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14,marginTop:6}}>Clients</div>
-            {clients.map(function(c){
-              const used=clientTotalUsed(c),total=Number(c.packageSessions)||0;
-              const rem=Math.max(0,total-used),pct=total>0?Math.min(100,(used/total)*100):0;
-              const perSess=total>0?(Number(c.packageValue)/total).toFixed(0):0;
-              const remVal=(rem*perSess).toFixed(0);
-              const isLow=rem<=2&&rem>0,isDone=rem===0&&total>0;
-              return(
-                <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow,borderLeft:'3px solid '+(isDone?C.red:isLow?C.warn:C.gold)}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                    <div style={{fontSize:17,fontWeight:800}}>{c.name}</div>
-                    <div style={{display:'flex',gap:6}}>
-                      {isLow&&<span style={{fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,background:'#fef3c7',color:'#92400e'}}>LOW</span>}
-                      {isDone&&<span style={{fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:99,background:'#fee2e2',color:'#991b1b'}}>DONE</span>}
-                      <span style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:99,background:C.surface,color:C.muted}}>{clientPeriodCount(c)} this period</span>
+            <div style={{fontSize:11, fontWeight:800, color:C.mid, textTransform:'uppercase', letterSpacing:1.5, marginBottom:14, marginTop:6}}>Clients</div>
+            {clients.map(function (c) {
+              var st = statsFor(c);
+              var pct = st.total > 0 ? Math.min(100, (st.used / st.total) * 100) : 0;
+              return (
+                <div key={c.id} style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:12, boxShadow:C.shadow, borderLeft:'3px solid ' + (st.isDone ? C.red : st.isLow ? C.warn : C.gold)}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, gap:8}}>
+                    <div style={{fontSize:17, fontWeight:800}}>{c.name}</div>
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap', justifyContent:'flex-end'}}>
+                      {st.isLow && <span style={{fontSize:10, fontWeight:800, padding:'3px 9px', borderRadius:99, background:'#fef3c7', color:'#92400e'}}>LOW</span>}
+                      {st.isDone && <span style={{fontSize:10, fontWeight:800, padding:'3px 9px', borderRadius:99, background:'#fee2e2', color:'#991b1b'}}>DONE</span>}
+                      <span style={{fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:99, background:C.surface, color:C.muted}}>{st.periodCount} this period</span>
                     </div>
                   </div>
-                  <div style={{background:'rgba(0,0,0,0.07)',borderRadius:99,height:5,margin:'10px 0',overflow:'hidden'}}>
-                    <div style={{height:'100%',borderRadius:99,width:pct+'%',backgroundImage:isDone?C.gradRed:isLow?C.gradWarn:C.gradGold}}/>
+                  {(c.packages || []).length > 1 && <div style={{fontSize:11, color:C.muted, fontWeight:700, marginBottom:4}}>Current package</div>}
+                  <div style={{background:'rgba(0,0,0,0.07)', borderRadius:99, height:5, margin:'10px 0', overflow:'hidden'}}>
+                    <div style={{height:'100%', borderRadius:99, width:pct + '%', backgroundImage:st.isDone ? C.gradRed : st.isLow ? C.gradWarn : C.gradGold}} />
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:13,fontWeight:600}}>
-                    <span style={{color:C.mid}}>{used}/{total} sessions</span>
-                    <span style={{color:isDone?C.red:isLow?C.warn:C.green,fontWeight:700}}>{rem} remaining</span>
+                  <div style={{display:'flex', justifyContent:'space-between', fontSize:13, fontWeight:600}}>
+                    <span data-ui="used-line" style={{color:C.mid}}>{st.used}/{st.total} sessions</span>
+                    <span style={{color:st.isDone ? C.red : st.isLow ? C.warn : C.green, fontWeight:700}}>{st.over ? st.over + ' over' : st.rem + ' remaining'}</span>
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border,color:C.muted}}>
-                    <span>Since {c.startDate?fmt(c.startDate):'-'}</span>
-                    <span style={{color:C.green,fontWeight:700}}>AED {Number(remVal).toLocaleString()} left</span>
+                  <div style={{display:'flex', justifyContent:'space-between', fontSize:12, marginTop:8, paddingTop:8, borderTop:'1px solid ' + C.border, color:C.muted}}>
+                    <span>Since {c.startDate ? fmt(c.startDate) : '-'}</span>
+                    <span style={{color:C.green, fontWeight:700}}>AED {Number(st.remVal.toFixed(0)).toLocaleString()} left</span>
                   </div>
                 </div>
               );
@@ -299,61 +1533,141 @@ function App(){
           </div>}
         </div>}
 
-        {tab==='clients'&&
+        {tab === 'clients' &&
         <div>
-          <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14}}>Clients \u00b7 {clients.length}</div>
-          {clients.length===0
-            ?<div style={{background:C.card,borderRadius:20,padding:'48px 20px',textAlign:'center',boxShadow:C.shadow}}>
-              <div style={{fontSize:48,marginBottom:12}}>👤</div>
-              <div style={{color:C.muted,fontSize:14}}>Tap + to add your first client</div>
+          <div style={{fontSize:11, fontWeight:800, color:C.mid, textTransform:'uppercase', letterSpacing:1.5, marginBottom:14}}>Clients &middot; {clients.length}</div>
+          {unmatched.length > 0 &&
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.warn, textTransform:'uppercase', letterSpacing:1.5, marginBottom:8}}>Names to link</div>
+            <div style={{fontSize:13, color:C.mid, lineHeight:1.45, marginBottom:10}}>These names are on sessions but do not match a client exactly. Link a name once and every session with that name counts for the client you pick.</div>
+            {aliasMsg && <div style={{color:C.red, fontSize:13, fontWeight:700, marginBottom:8}}>{aliasMsg}</div>}
+            {unmatched.map(function (u) {
+              return (
+                <div key={u.key} style={{background:C.card, borderRadius:16, padding:'14px', marginBottom:10, boxShadow:C.shadow, borderLeft:'3px solid ' + C.warn}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8, gap:8}}>
+                    <div style={{fontWeight:800, fontSize:15}}>{u.label}</div>
+                    <div style={{fontSize:12, color:C.muted, fontWeight:700}}>{u.count} session{u.count === 1 ? '' : 's'}</div>
+                  </div>
+                  {u.ambiguous
+                    ? <div style={{fontSize:13, color:C.mid, lineHeight:1.45}}>This name matches more than one client. Rename one of them and the sessions will know where to go.</div>
+                    : clients.length === 0
+                      ? <div style={{fontSize:13, color:C.mid}}>Add the client first, then come back and link this name.</div>
+                      : <div>
+                        <select data-ui={'alias-' + u.key} style={inp} value={aliasPick[u.key] || ''} onChange={function (e) { setAliasMsg(''); setAliasPick(function (p) { var n = Object.assign({}, p); n[u.key] = e.target.value; return n; }); }}>
+                          <option value="">Choose client...</option>
+                          {clients.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option>; })}
+                        </select>
+                        <button data-ui={'link-' + u.key} style={Object.assign({}, primaryBtn, {marginTop:0})} onClick={function () { linkAlias(u); }}>Link to client</button>
+                      </div>}
+                </div>
+              );
+            })}
+          </div>}
+
+          {clients.length === 0
+            ? <div style={{background:C.card, borderRadius:20, padding:'48px 20px', textAlign:'center', boxShadow:C.shadow}}>
+              <div style={{fontSize:48, marginBottom:12}}>👤</div>
+              <div style={{color:C.muted, fontSize:14}}>Tap + to add your first client</div>
             </div>
-            :clients.map(function(c){
-              const used=clientTotalUsed(c),total=Number(c.packageSessions)||0;
-              const rem=Math.max(0,total-used),pct=total>0?Math.min(100,(used/total)*100):0;
-              const perSess=total>0?(Number(c.packageValue)/total).toFixed(0):0;
-              const remVal=(rem*perSess).toFixed(0);
-              const isLow=rem<=2&&rem>0,isDone=rem===0&&total>0;
-              const isExp=expanded===c.id,ch_=cChargesTotal(c.id);
-              const clientSessions=sessions.filter(function(s){return match(c.name,s.clientName)&&(!c.startDate||s.date>=c.startDate);}).sort(function(a,b){return a.date>b.date?1:-1;});
-              return(
-                <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow,borderLeft:'3px solid '+(isDone?C.red:isLow?C.warn:C.gold)}}>
-                  <div style={{display:'flex',justifyContent:'space-between',cursor:'pointer'}} onClick={function(){setExpanded(isExp?null:c.id);}}>
-                    <div style={{fontSize:17,fontWeight:800}}>{c.name}</div>
-                    <span style={{color:C.muted,fontSize:11}}>{isExp?'\u25b2':'\u25bc'}</span>
+            : clients.map(function (c) {
+              var st = statsFor(c);
+              var pct = st.total > 0 ? Math.min(100, (st.used / st.total) * 100) : 0;
+              var isExp = expanded === c.id;
+              var ch_ = PT.chargeTotalFor(charges, c.id);
+              var chargeCount = charges.filter(function (ch) { return ch.clientId === c.id; }).length;
+              var clientSessions = PT.sessionsForClient(c, sessions, clients);
+              var past = PT.sortPackages(c.packages || []).slice(0, -1);
+              return (
+                <div key={c.id} style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:12, boxShadow:C.shadow, borderLeft:'3px solid ' + (st.isDone ? C.red : st.isLow ? C.warn : C.gold)}}>
+                  <div style={{display:'flex', justifyContent:'space-between', cursor:'pointer'}} onClick={function () { setExpanded(isExp ? null : c.id); }}>
+                    <div style={{fontSize:17, fontWeight:800}}>{c.name}</div>
+                    <span style={{color:C.muted, fontSize:11}}>{isExp ? '\u25b2' : '\u25bc'}</span>
                   </div>
-                  <div style={{background:'rgba(0,0,0,0.07)',borderRadius:99,height:5,margin:'10px 0',overflow:'hidden'}}>
-                    <div style={{height:'100%',borderRadius:99,width:pct+'%',backgroundImage:isDone?C.gradRed:isLow?C.gradWarn:C.gradGold}}/>
+                  {(c.packages || []).length > 1 && <div style={{fontSize:11, color:C.muted, fontWeight:700, marginTop:4}}>Current package</div>}
+                  <div style={{background:'rgba(0,0,0,0.07)', borderRadius:99, height:5, margin:'10px 0', overflow:'hidden'}}>
+                    <div style={{height:'100%', borderRadius:99, width:pct + '%', backgroundImage:st.isDone ? C.gradRed : st.isLow ? C.gradWarn : C.gradGold}} />
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-                    {[['Used',used,C.charcoal],['Left',rem,isDone?C.red:isLow?C.warn:C.green],['Total',total,C.gold]].map(function(arr){return(
-                      <div key={arr[0]} style={{background:C.surface,borderRadius:13,padding:'10px 8px',textAlign:'center'}}>
-                        <div style={{fontSize:22,fontWeight:900,color:arr[2]}}>{arr[1]}</div>
-                        <div style={{fontSize:10,color:C.muted,marginTop:2,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{arr[0]}</div>
-                      </div>
-                    );})}
-                  </div>
-                  {isExp&&<div style={{marginTop:14,paddingTop:14,borderTop:'1px solid '+C.border}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-                      {[
-                        ['Package Value','AED '+Number(c.packageValue||0).toLocaleString(),C.charcoal],
-                        ['Remaining','AED '+Number(remVal).toLocaleString(),C.green],
-                        ['Per Session','AED '+perSess,C.mid],
-                        ch_>0?['Charges','AED '+ch_,C.red]:['Start Date',c.startDate||'-',C.muted],
-                      ].map(function(arr){return(
-                        <div key={arr[0]} style={{background:C.surface,borderRadius:13,padding:'11px 14px'}}>
-                          <div style={{fontSize:14,fontWeight:800,color:arr[2]}}>{arr[1]}</div>
-                          <div style={{fontSize:10,color:C.muted,marginTop:3,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{arr[0]}</div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
+                    {[['Used', st.used, C.charcoal], ['Left', st.rem, st.isDone ? C.red : st.isLow ? C.warn : C.green], ['Total', st.total, C.gold]].map(function (arr) {
+                      return (
+                        <div key={arr[0]} style={{background:C.surface, borderRadius:13, padding:'10px 8px', textAlign:'center'}}>
+                          <div style={{fontSize:22, fontWeight:900, color:arr[2]}}>{arr[1]}</div>
+                          <div style={{fontSize:10, color:C.muted, marginTop:2, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8}}>{arr[0]}</div>
                         </div>
-                      );})}
+                      );
+                    })}
+                  </div>
+                  {isExp && <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid ' + C.border}}>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:12}}>
+                      {[
+                        ['Package Value', 'AED ' + Number(st.cur.value || 0).toLocaleString(), C.charcoal],
+                        ['Remaining', 'AED ' + Number(st.remVal.toFixed(0)).toLocaleString(), C.green],
+                        ['Per Session', 'AED ' + Number(st.per).toFixed(0), C.mid],
+                        ['Start Date', st.cur.startDate ? fmt(st.cur.startDate) : '-', C.muted],
+                      ].map(function (arr) {
+                        return (
+                          <div key={arr[0]} style={{background:C.surface, borderRadius:13, padding:'11px 14px'}}>
+                            <div style={{fontSize:14, fontWeight:800, color:arr[2]}}>{arr[1]}</div>
+                            <div style={{fontSize:10, color:C.muted, marginTop:3, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8}}>{arr[0]}</div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}}>
-                      {clientSessions.map(function(s,j){return(
-                        <span key={j} style={{background:C.surface,borderRadius:9,padding:'4px 9px',fontSize:11,fontWeight:700,color:C.mid,border:'1px solid '+C.border}}>{fmt(s.date)}</span>
-                      );})}
+                    {chargeCount > 0 &&
+                    <div style={{fontSize:13, fontWeight:800, color:ch_ > 0 ? C.red : C.warn, marginBottom:12}}>
+                      Charges AED {money(ch_)}{ch_ === 0 ? ' \u2014 add the amounts' : ''}
+                    </div>}
+                    {st.over > 0 && <div style={{fontSize:13, fontWeight:700, color:C.red, marginBottom:12}}>{st.over} session{st.over === 1 ? '' : 's'} over this package</div>}
+                    {past.length > 0 &&
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:10, fontWeight:800, color:C.muted, letterSpacing:1, textTransform:'uppercase', marginBottom:8}}>Previous packages</div>
+                      {past.map(function (pkg) {
+                        var used = PT.packageUsed(c, sessions, pkg, clients);
+                        return (
+                          <div key={pkg.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, background:C.surface, borderRadius:12, padding:'10px 12px', marginBottom:6}}>
+                            <div>
+                              <div style={{fontSize:13, fontWeight:800}}>{used}/{pkg.sessions || 0} &middot; AED {Number(pkg.value || 0).toLocaleString()}</div>
+                              <div style={{fontSize:11, color:C.muted, marginTop:2}}>From {pkg.startDate ? fmt(pkg.startDate) : 'the start'}</div>
+                            </div>
+                            <button style={miniBtn} onClick={function () { openEditPackage(c, pkg); }}>Edit</button>
+                          </div>
+                        );
+                      })}
+                    </div>}
+                    {(c.aliases || []).length > 0 &&
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:10, fontWeight:800, color:C.muted, letterSpacing:1, textTransform:'uppercase', marginBottom:6}}>Also matches</div>
+                      <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                        {c.aliases.map(function (a) {
+                          return (
+                            <span key={a} style={{background:C.surface, border:'1px solid ' + C.border, borderRadius:99, padding:'4px 8px 4px 10px', fontSize:12, fontWeight:700, color:C.mid, display:'inline-flex', alignItems:'center', gap:6}}>
+                              {a}
+                              <button onClick={function () { saveClients(PT.removeAlias(clients, c.id, a)); }} style={{border:'none', background:'transparent', color:C.muted, fontWeight:800, cursor:'pointer', fontSize:14, lineHeight:1}} aria-label={'Remove ' + a}>&times;</button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>}
+                    <div style={{fontSize:10, fontWeight:800, color:C.muted, letterSpacing:1, textTransform:'uppercase', marginBottom:6}}>Sessions</div>
+                    <div style={{maxHeight:240, overflowY:'auto', marginBottom:12}}>
+                      {clientSessions.length === 0 && <div style={{fontSize:12, color:C.muted, padding:'6px 0'}}>No sessions yet.</div>}
+                      {clientSessions.map(function (s) {
+                        return (
+                          <div key={s.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'8px 0', borderTop:'1px solid ' + C.border}}>
+                            <span style={{fontSize:13, fontWeight:700}}>{fmt(s.date)}</span>
+                            <span style={{display:'flex', gap:6}}>
+                              <button data-ui="edit-client-session" style={miniBtn} onClick={function () { openEditSession(s); }}>Edit</button>
+                              <button data-ui="delete-client-session" style={miniDanger} onClick={function () { askDeleteSession(s); }}>Delete</button>
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div style={{display:'flex',gap:8}}>
-                      <button style={Object.assign({},primaryBtn,{flex:1,padding:'12px',fontSize:13,marginTop:0})} onClick={function(){openEdit(c);}}>Edit</button>
-                      <button style={{flex:1,padding:'12px',fontSize:13,border:'1.5px solid '+C.border,borderRadius:14,background:C.surface,color:C.mid,fontWeight:700,cursor:'pointer'}} onClick={function(){openAdd('charge',{clientId:c.id});}}>+ Charge</button>
+                    <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                      <button style={rowPrimary} onClick={function () { openEdit(c); }}>Edit</button>
+                      <button style={rowBtn} onClick={function () { openRenew(c); }}>Renew package</button>
+                      <button style={rowBtn} onClick={function () { openAddSession({clientId:c.id, date:PT.todayStr()}); }}>+ Session</button>
+                      <button style={rowBtn} onClick={function () { openAdd('charge', {clientId:c.id}); }}>+ Charge</button>
                     </div>
                   </div>}
                 </div>
@@ -362,167 +1676,306 @@ function App(){
           }
         </div>}
 
-        {tab==='report'&&
+        {tab === 'report' &&
         <div>
-          <div style={{backgroundImage:C.gradHero,borderRadius:20,padding:'20px 22px',marginBottom:16,boxShadow:C.shadowDark,position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:0,left:24,right:24,height:2,backgroundImage:C.gradGold,borderRadius:99}}/>
-            <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:2,marginBottom:10}}>Period Report</div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+          <div style={{backgroundImage:C.gradHero, borderRadius:20, padding:'20px 22px', marginBottom:16, boxShadow:C.shadowDark, position:'relative', overflow:'hidden'}}>
+            <div style={{position:'absolute', top:0, left:24, right:24, height:2, backgroundImage:C.gradGold, borderRadius:99}} />
+            <div style={{fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.4)', textTransform:'uppercase', letterSpacing:2, marginBottom:10}}>Period Report</div>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
               <div>
-                <div style={{fontSize:38,fontWeight:900,letterSpacing:-2,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>{periodSess.length}</div>
-                <div style={{fontSize:11,color:'rgba(255,255,255,0.35)',marginTop:3,fontWeight:600,textTransform:'uppercase'}}>total sessions</div>
+                <div style={{fontSize:38, fontWeight:900, letterSpacing:-2, backgroundImage:C.gradGold, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text'}}>{periodSess.length}</div>
+                <div style={{fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:3, fontWeight:600, textTransform:'uppercase'}}>total sessions</div>
               </div>
               <div style={{textAlign:'right'}}>
-                <div onClick={function(){setShowPeriod(true);}} style={{fontSize:13,color:'rgba(255,255,255,0.5)',fontWeight:600,cursor:'pointer'}}>{periodLabel()}</div>
-                <div style={{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:3}}>{clients.length} clients</div>
+                <div onClick={openPeriod} style={{fontSize:13, color:'rgba(255,255,255,0.5)', fontWeight:600, cursor:'pointer'}}>{periodLabel()}</div>
+                <div style={{fontSize:11, color:'rgba(255,255,255,0.3)', marginTop:3}}>{clients.length} clients</div>
               </div>
             </div>
           </div>
 
-          <div style={{background:C.card,borderRadius:20,padding:'18px 20px',marginBottom:16,boxShadow:C.shadow,borderLeft:'3px solid '+C.gold}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:1.5}}>Commission Estimate</div>
-              <span onClick={function(){setShowCommission(true);}} style={{fontSize:11,color:C.gold,fontWeight:700,cursor:'pointer'}}>Settings</span>
+          <div style={{background:C.card, borderRadius:20, padding:'18px 20px', marginBottom:16, boxShadow:C.shadow, borderLeft:'3px solid ' + C.gold}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+              <div style={{fontSize:11, fontWeight:800, color:C.muted, textTransform:'uppercase', letterSpacing:1.5}}>Commission Estimate</div>
+              <span data-ui="commission-open" onClick={openCommission} style={{fontSize:11, color:C.gold, fontWeight:700, cursor:'pointer'}}>Settings</span>
             </div>
-            <div style={{fontSize:36,fontWeight:900,letterSpacing:-1.5,backgroundImage:C.gradGold,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text',marginBottom:10}}>
-              AED {commission.toLocaleString('en',{maximumFractionDigits:2})}
+            <div data-ui="commission-figure" style={{fontSize:36, fontWeight:900, letterSpacing:-1.5, backgroundImage:C.gradGold, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', marginBottom:10}}>
+              AED {estimate.commission.toLocaleString('en', {maximumFractionDigits:2})}
             </div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-              <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Tier ({periodSess.length} sessions)</span>
-              <span style={{fontSize:12,fontWeight:800,color:C.charcoal}}>{getTierLabel(periodSess.length)}</span>
+            <div style={{display:'flex', justifyContent:'space-between', marginBottom:4}}>
+              <span style={{fontSize:11, color:C.muted, fontWeight:600}}>Tier ({periodSess.length} sessions)</span>
+              <span style={{fontSize:12, fontWeight:800, color:C.charcoal}}>{PT.getTierLabel(periodSess.length)}</span>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginTop:10,paddingTop:10,borderTop:'1px solid '+C.border}}>
-              {[['Total Revenue','AED '+totalRevenue.toLocaleString('en',{maximumFractionDigits:0})],['Net Revenue','AED '+netRevenue.toLocaleString('en',{maximumFractionDigits:0})],['Quota','AED '+quota.toLocaleString('en',{maximumFractionDigits:0})],['Comm. Revenue','AED '+commRevenue.toLocaleString('en',{maximumFractionDigits:0})]].map(function(arr){return(
-                <div key={arr[0]} style={{background:C.surface,borderRadius:12,padding:'9px 12px'}}>
-                  <div style={{fontSize:13,fontWeight:800,color:C.charcoal}}>{arr[1]}</div>
-                  <div style={{fontSize:9,color:C.muted,marginTop:2,fontWeight:700,textTransform:'uppercase',letterSpacing:0.8}}>{arr[0]}</div>
-                </div>
-              );})}
+            <div data-ui="charge-rule" style={{fontSize:12, color:C.mid, fontWeight:600, lineHeight:1.45, marginTop:8}}>
+              Session revenue AED {money(sessionRevenueTotal)}
+              <br />
+              Charges this period AED {money(periodChargeSum)} &middot; {estimate.includeCharges ? 'included in commission' : 'not in your commission'}
+            </div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10, paddingTop:10, borderTop:'1px solid ' + C.border}}>
+              {[
+                ['Total Revenue', 'AED ' + money0(estimate.totalRevenue)],
+                ['Net Revenue', 'AED ' + money0(estimate.netRevenue)],
+                ['Quota', 'AED ' + money0(estimate.quota)],
+                ['Comm. Revenue', 'AED ' + money0(estimate.commRevenue)]
+              ].map(function (arr) {
+                return (
+                  <div key={arr[0]} style={{background:C.surface, borderRadius:12, padding:'9px 12px'}}>
+                    <div style={{fontSize:13, fontWeight:800, color:C.charcoal}}>{arr[1]}</div>
+                    <div style={{fontSize:9, color:C.muted, marginTop:2, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8}}>{arr[0]}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {clients.map(function(c){
-            return Object.assign({},c,{ps:periodSess.filter(function(s){return match(c.name,s.clientName);}).sort(function(a,b){return a.date>b.date?1:-1;})});
-          }).filter(function(c){return c.ps.length>0;})
-            .sort(function(a,b){return b.ps.length-a.ps.length;})
-            .map(function(c,i){return(
-              <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:10,boxShadow:C.shadow,borderLeft:'3px solid '+(i===0?C.gold:C.border)}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-                  <div style={{fontSize:16,fontWeight:800}}>{c.name}</div>
-                  <div style={{fontSize:22,fontWeight:900,color:i===0?C.gold:C.charcoal}}>{c.ps.length} <span style={{fontSize:12,fontWeight:600,color:C.muted}}>sessions</span></div>
+          {clients.map(function (c) {
+            var ps = periodSess.filter(function (s) { return PT.sessionCountsFor(c, clients, s.clientName); }).sort(function (a, b) { return a.date > b.date ? 1 : a.date < b.date ? -1 : 0; });
+            var fee = PT.periodChargeTotalFor(charges, c.id, period);
+            return {client:c, ps:ps, fee:fee};
+          }).filter(function (row) { return row.ps.length > 0 || row.fee > 0; })
+            .sort(function (a, b) { return b.ps.length - a.ps.length || b.fee - a.fee; })
+            .map(function (row, i) {
+              var c = row.client;
+              return (
+                <div key={c.id} style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:10, boxShadow:C.shadow, borderLeft:'3px solid ' + (i === 0 ? C.gold : C.border)}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                    <div style={{fontSize:16, fontWeight:800}}>{c.name}</div>
+                    <div style={{fontSize:22, fontWeight:900, color:i === 0 ? C.gold : C.charcoal}}>{row.ps.length} <span style={{fontSize:12, fontWeight:600, color:C.muted}}>sessions</span></div>
+                  </div>
+                  {row.ps.length > 0 &&
+                  <div style={{fontSize:11, color:C.muted, fontWeight:600, marginBottom:10, textTransform:'uppercase', letterSpacing:0.8}}>
+                    {fmt(period.start || row.ps[0].date)} - {fmt(period.end || row.ps[row.ps.length - 1].date)}
+                  </div>}
+                  {row.fee > 0 && <div style={{fontSize:13, fontWeight:800, color:C.red, marginBottom:8}}>Charges AED {money(row.fee)}</div>}
+                  <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+                    {row.ps.map(function (s) {
+                      return <span key={s.id} style={{background:C.surface, borderRadius:9, padding:'5px 10px', fontSize:12, fontWeight:700, color:C.mid, border:'1px solid ' + C.border}}>{fmt(s.date)}</span>;
+                    })}
+                  </div>
                 </div>
-                <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:10,textTransform:'uppercase',letterSpacing:0.8}}>
-                  {fmt(period.start||c.ps[0].date)} - {fmt(period.end||c.ps[c.ps.length-1].date)}
-                </div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                  {c.ps.map(function(s,j){return(
-                    <span key={j} style={{background:C.surface,borderRadius:9,padding:'5px 10px',fontSize:12,fontWeight:700,color:C.mid,border:'1px solid '+C.border}}>{fmt(s.date)}</span>
-                  );})}
-                </div>
-              </div>
-            );})
-          }
+              );
+            })}
+          {orphanFees > 0 &&
+          <div style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:10, boxShadow:C.shadow}}>
+            <div style={{fontSize:14, fontWeight:800}}>Charges for removed clients</div>
+            <div style={{fontSize:13, fontWeight:800, color:C.red, marginTop:6}}>AED {money(orphanFees)}</div>
+          </div>}
         </div>}
 
-        {tab==='charges'&&
+        {tab === 'charges' &&
         <div>
-          <div style={{fontSize:11,fontWeight:800,color:C.mid,textTransform:'uppercase',letterSpacing:1.5,marginBottom:14}}>Charges & Incidents</div>
-          {charges.length===0
-            ?<div style={{background:C.card,borderRadius:20,padding:'48px 20px',textAlign:'center',boxShadow:C.shadow}}>
-              <div style={{fontSize:48,marginBottom:12}}>\u2705</div>
-              <div style={{color:C.muted,fontSize:14}}>No charges logged</div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:14, gap:8}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.mid, textTransform:'uppercase', letterSpacing:1.5}}>Charges & Incidents</div>
+            <div style={{fontSize:13, fontWeight:800, color:C.charcoal}}>AED {money(PT.chargeTotalFor(charges))}</div>
+          </div>
+          {charges.length === 0
+            ? <div style={{background:C.card, borderRadius:20, padding:'48px 20px', textAlign:'center', boxShadow:C.shadow}}>
+              <div style={{fontSize:48, marginBottom:12}}>{'\u2705'}</div>
+              <div style={{color:C.muted, fontSize:14}}>No charges logged</div>
             </div>
-            :clients.filter(function(c){return cCharges(c.id).length>0;}).map(function(c){return(
-              <div key={c.id} style={{background:C.card,borderRadius:20,padding:'16px 18px',marginBottom:12,boxShadow:C.shadow}}>
-                <div style={{fontSize:16,fontWeight:800,marginBottom:12}}>{c.name}</div>
-                {cCharges(c.id).map(function(ch){return(
-                  <div key={ch.id} style={{background:C.surface,borderRadius:13,padding:'12px 14px',marginBottom:8}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:700}}>{chargeLabels[ch.type]||ch.type}</div>
-                        <div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmt(ch.date)}</div>
-                      </div>
-                      <button onClick={function(){delCharge(ch.id);}} style={{background:'#fee2e2',border:'none',color:C.red,cursor:'pointer',fontSize:12,borderRadius:9,padding:'5px 11px',fontWeight:700}}>Remove</button>
+            : <div>
+              {clients.filter(function (c) { return charges.some(function (ch) { return ch.clientId === c.id; }); }).map(function (c) {
+                var rows = charges.filter(function (ch) { return ch.clientId === c.id; });
+                return (
+                  <div key={c.id} style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:12, boxShadow:C.shadow}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:12, gap:8}}>
+                      <div style={{fontSize:16, fontWeight:800}}>{c.name}</div>
+                      <div style={{fontSize:14, fontWeight:800, color:C.red}}>AED {money(PT.chargeTotalFor(charges, c.id))}</div>
                     </div>
-                    {ch.notes&&<div style={{fontSize:12,color:C.mid,marginTop:8,paddingTop:8,borderTop:'1px solid '+C.border}}>{ch.notes}</div>}
+                    {rows.map(renderCharge)}
                   </div>
-                );})}
-              </div>
-            );})
+                );
+              })}
+              {charges.some(function (ch) { return !knownClient(ch.clientId); }) &&
+              <div style={{background:C.card, borderRadius:20, padding:'16px 18px', marginBottom:12, boxShadow:C.shadow}}>
+                <div style={{fontSize:16, fontWeight:800, marginBottom:12}}>Removed clients</div>
+                {charges.filter(function (ch) { return !knownClient(ch.clientId); }).map(renderCharge)}
+              </div>}
+            </div>
           }
         </div>}
       </div>
 
-      {(tab==='clients'||tab==='charges')&&(
-        <button onClick={function(){tab==='clients'?openAdd('client',{startDate:todayStr()}):openAdd('charge');}}
-          style={{position:'fixed',bottom:100,right:20,width:56,height:56,borderRadius:99,backgroundImage:C.gradGold,border:'none',color:C.black,fontSize:28,cursor:'pointer',boxShadow:C.shadowGold,zIndex:10,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900}}>+</button>
+      {(tab === 'clients' || tab === 'charges') && (
+        <button data-ui="fab" className="pt-fab" onClick={function () { tab === 'clients' ? openAdd('client', {startDate:PT.todayStr()}) : openAdd('charge'); }}
+          style={{backgroundImage:C.gradGold, color:C.black, boxShadow:C.shadowGold}}>+</button>
       )}
 
-      <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,borderTop:'1px solid '+C.border,display:'flex',padding:'10px 0 14px',zIndex:20,boxShadow:'0 -4px 16px rgba(0,0,0,0.06)'}}>
-        {[['dashboard','📊','Dashboard'],['clients','👤','Clients'],['report','🏆','Report'],['charges','🧾','Charges']].map(function(arr){return(
-          <div key={arr[0]} onClick={function(){setTab(arr[0]);}} style={{flex:1,textAlign:'center',cursor:'pointer',padding:'4px 0'}}>
-            <div style={{fontSize:18,marginBottom:3}}>{arr[1]}</div>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:0.5,color:tab===arr[0]?C.black:C.muted,textTransform:'uppercase'}}>{arr[2]}</div>
-            {tab===arr[0]&&<div style={{width:20,height:2.5,borderRadius:99,backgroundImage:C.gradGold,margin:'4px auto 0'}}/>}
-          </div>
-        );})}
+      <div className="pt-tabs">
+        {[['dashboard','\uD83D\uDCCA','Dashboard'], ['clients','\uD83D\uDC64','Clients'], ['report','\uD83C\uDFC6','Report'], ['charges','\uD83E\uDDFE','Charges']].map(function (arr) {
+          return (
+            <div key={arr[0]} data-ui={'tab-' + arr[0]} onClick={function () { setTab(arr[0]); }} style={{flex:1, textAlign:'center', cursor:'pointer', padding:'4px 0'}}>
+              <div style={{fontSize:18, marginBottom:3}}>{arr[1]}</div>
+              <div style={{fontSize:10, fontWeight:800, letterSpacing:0.5, color:tab === arr[0] ? C.black : C.muted, textTransform:'uppercase'}}>{arr[2]}</div>
+              {tab === arr[0] && <div style={{width:20, height:2.5, borderRadius:99, backgroundImage:C.gradGold, margin:'4px auto 0'}} />}
+            </div>
+          );
+        })}
       </div>
 
-      {showPeriod&&<Modal title="Billing Period" onClose={function(){setShowPeriod(false);}}>
-        <p style={{fontSize:13,color:C.muted,marginBottom:18,lineHeight:1.6}}>Set your custom billing window</p>
-        <Lbl>Start Date</Lbl><input style={inp} type="date" value={period.start||''} onChange={function(e){setPeriod(function(p){return Object.assign({},p,{start:e.target.value});});}}/>
-        <Lbl>End Date</Lbl><input style={inp} type="date" value={period.end||''} onChange={function(e){setPeriod(function(p){return Object.assign({},p,{end:e.target.value});});}}/>
-        <button style={goldBtn} onClick={function(){savePeriod(period);setShowPeriod(false);}}>Save Period</button>
-        <button style={ghostBtn} onClick={function(){savePeriod({start:'',end:''});setShowPeriod(false);}}>Reset to Calendar Month</button>
+      {showPeriod && periodDraft &&
+      <Modal title="Billing Period" onClose={closePeriod}>
+        <p style={{fontSize:13, color:C.muted, marginBottom:18, lineHeight:1.6}}>Set your billing window. Closing this without Save keeps the dates you already have.</p>
+        <Lbl>Start Date</Lbl>
+        <input data-ui="period-start" style={inp} type="date" value={periodDraft.start || ''} onChange={function (e) { setPeriodDraft(function (p) { return Object.assign({}, p, {start:e.target.value}); }); }} />
+        <Lbl>End Date</Lbl>
+        <input data-ui="period-end" style={inp} type="date" value={periodDraft.end || ''} onChange={function (e) { setPeriodDraft(function (p) { return Object.assign({}, p, {end:e.target.value}); }); }} />
+        <button data-ui="period-save" style={goldBtn} onClick={savePeriodDraft}>Save Period</button>
+        <button style={ghostBtn} onClick={resetPeriod}>Reset to Calendar Month</button>
       </Modal>}
 
-      {showImport&&<Modal title="Import Sessions" onClose={function(){setShowImport(false);}}>
-        <p style={{fontSize:13,color:C.muted,marginBottom:18,lineHeight:1.6}}>Paste the data from Claude below. This ADDS to existing data, never deletes.</p>
+      {showImport &&
+      <Modal title="Import Sessions" onClose={function () { setShowImport(false); }}>
+        <p style={{fontSize:13, color:C.muted, marginBottom:18, lineHeight:1.6}}>Paste the data below. This adds to existing sessions and does not delete any.</p>
         <Lbl>Paste Data</Lbl>
-        <textarea style={Object.assign({},inp,{height:120,resize:'none',fontFamily:'monospace',fontSize:11})} value={importText} onChange={function(e){setImportText(e.target.value);}} placeholder="Name|2026-06-01,Name|2026-06-02,..."></textarea>
+        <textarea style={Object.assign({}, inp, {height:120, resize:'none', fontFamily:'monospace', fontSize:12})} value={importText} onChange={function (e) { setImportText(e.target.value); }} placeholder="Name|2026-06-01,Name|2026-06-02,..." />
         <button style={goldBtn} onClick={importSessions}>Import Sessions</button>
       </Modal>}
 
-      {showCommission&&<Modal title="Commission Settings" onClose={function(){setShowCommission(false);}}>
+      {showCommission && commDraft &&
+      <Modal title="Commission Settings" onClose={closeCommission}>
+        <p style={{fontSize:13, color:C.muted, marginBottom:18, lineHeight:1.6}}>Closing this without Save keeps your current settings.</p>
         <Lbl>Monthly Quota (AED)</Lbl>
-        <input style={inp} type="number" value={commSettings.quota} onChange={function(e){setCommSettings(function(p){return Object.assign({},p,{quota:e.target.value});});}}/>
+        <input data-ui="commission-quota" style={inp} type="number" value={commDraft.quota} onChange={function (e) { setCommDraft(function (p) { return Object.assign({}, p, {quota:e.target.value}); }); }} />
         <Lbl>Net Revenue Factor (%)</Lbl>
-        <input style={inp} type="number" value={commSettings.netFactor} onChange={function(e){setCommSettings(function(p){return Object.assign({},p,{netFactor:e.target.value});});}}/>
-        <div style={{background:C.surface,borderRadius:14,padding:'14px',marginBottom:6,fontSize:12,color:C.mid,lineHeight:1.8}}>
-          Up to 80 = 45% \u00b7 81-100 = 60% \u00b7 101-119 = 65% \u00b7 120+ = 70%
+        <input style={inp} type="number" value={commDraft.netFactor} onChange={function (e) { setCommDraft(function (p) { return Object.assign({}, p, {netFactor:e.target.value}); }); }} />
+        <div data-ui="commission-charges" onClick={function () { setCommDraft(function (p) { return Object.assign({}, p, {includeCharges:!p.includeCharges}); }); }} style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, background:C.surface, borderRadius:14, padding:'14px 16px', marginBottom:12, cursor:'pointer'}}>
+          <div>
+            <div style={{fontWeight:800, fontSize:14}}>Count charges in commission</div>
+            <div style={{fontSize:12, color:C.muted, marginTop:4, lineHeight:1.45}}>Off leaves late-cancel and no-show fees out of your commission. On adds this period&apos;s fees to revenue before the quota. Session count and tier stay the same.</div>
+          </div>
+          <div style={{fontWeight:900, color:commDraft.includeCharges ? C.green : C.muted, flexShrink:0}}>{commDraft.includeCharges ? 'On' : 'Off'}</div>
         </div>
-        <button style={goldBtn} onClick={function(){saveCommSettings(commSettings);setShowCommission(false);}}>Save Settings</button>
+        <div style={{background:C.surface, borderRadius:14, padding:'14px', marginBottom:6, fontSize:12, color:C.mid, lineHeight:1.8}}>
+          Up to 80 = 45% &middot; 81-100 = 60% &middot; 101-119 = 65% &middot; 120+ = 70%
+        </div>
+        <button data-ui="commission-save" style={goldBtn} onClick={saveCommissionDraft}>Save Settings</button>
       </Modal>}
 
-      {modal==='client'&&<Modal title={editId?'Edit Client':'New Client'} onClose={function(){setModal(null);}}>
-        <Lbl>Name</Lbl><input style={inp} placeholder="e.g. Jeremy" value={form.name||''} onChange={function(e){f({name:e.target.value});}}/>
-        <Lbl>Package Sessions</Lbl><input style={inp} type="number" placeholder="e.g. 20" value={form.packageSessions||''} onChange={function(e){f({packageSessions:e.target.value});}}/>
-        <Lbl>Package Value (AED)</Lbl><input style={inp} type="number" placeholder="e.g. 3500" value={form.packageValue||''} onChange={function(e){f({packageValue:e.target.value});}}/>
-        <Lbl>Start Date</Lbl><input style={inp} type="date" value={form.startDate||''} onChange={function(e){f({startDate:e.target.value});}}/>
+      {showBackup &&
+      <Modal title="Backup & Restore" onClose={function () { setShowBackup(false); }}>
+        <div style={{background:C.surface, borderRadius:14, padding:'14px', marginBottom:16, fontSize:13, color:C.mid, lineHeight:1.55}}>
+          <div style={{fontWeight:800, color:C.txt, marginBottom:6}}>Moving onto your Home Screen?</div>
+          The Home Screen app starts empty. It does not share clients with Safari.
+          <div style={{marginTop:8}}>1. Tap <b>Copy backup</b> here.</div>
+          <div>2. Open PT Planner from your Home Screen.</div>
+          <div>3. Tap <b>Backup</b>, paste into Restore, tap <b>Check this backup</b>, then <b>Replace all data on this phone</b>.</div>
+          <div style={{marginTop:8}}>You can also download the file here and choose it in the Home Screen app.</div>
+        </div>
+        <button data-ui="backup-copy" style={goldBtn} onClick={onCopyBackup}>Copy backup</button>
+        <button data-ui="backup-download" style={ghostBtn} onClick={onDownloadBackup}>Download file</button>
+        {canShare && <button style={ghostBtn} onClick={onShareBackup}>Share backup</button>}
+        <button data-ui="show-backup-text" style={Object.assign({}, ghostBtn, {marginBottom:8})} onClick={toggleBackupText}>{showBackupText ? 'Hide backup text' : 'Show backup text'}</button>
+        {showBackupText &&
+        <textarea data-ui="backup-text" readOnly style={Object.assign({}, inp, {height:120, resize:'none', fontFamily:'monospace', fontSize:11})} value={backupJsonShown} />}
+        <div style={{fontSize:12, color:C.muted, fontWeight:700, margin:'4px 0 16px'}}>
+          {meta.backupAt ? ('Last backup ' + fmt(PT.localDateStr(meta.backupAt))) : 'No backup from this phone yet.'}
+        </div>
+        {backupMsg && <div data-ui="backup-msg" style={{fontSize:13, fontWeight:700, color:C.charcoal, background:'#f7f6f2', borderRadius:12, padding:'12px 14px', marginBottom:12, lineHeight:1.45}}>{backupMsg}</div>}
+        <div style={{height:1, background:C.border, margin:'6px 0 16px'}} />
+        <div style={{fontSize:16, fontWeight:900, marginBottom:8}}>Restore</div>
+        <p style={{fontSize:13, color:C.muted, marginBottom:12, lineHeight:1.5}}>Paste a backup or choose the file. Nothing is replaced until you confirm.</p>
+        <Lbl>Paste backup</Lbl>
+        <textarea data-ui="restore-text" style={Object.assign({}, inp, {height:100, resize:'none', fontFamily:'monospace', fontSize:16})} value={restoreText} placeholder="Paste the backup text here" onChange={function (e) { setRestoreText(e.target.value); setRestorePreview(null); }} />
+        <input data-ui="restore-file" type="file" accept="application/json,.json,text/plain,.txt" style={{display:'none'}} onChange={onRestoreFile} />
+        <button style={ghostBtn} onClick={function () { var el = document.querySelector('[data-ui="restore-file"]'); if (el) el.click(); }}>Choose a file</button>
+        <button data-ui="restore-check" style={primaryBtn} onClick={checkRestore}>Check this backup</button>
+        {previewCounts &&
+        <div data-ui="restore-preview" style={{background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:14, padding:'14px', marginTop:12}}>
+          <div style={{fontWeight:800, marginBottom:6}}>This will replace everything on this phone.</div>
+          <div style={{fontSize:13, color:C.mid, lineHeight:1.5}}>
+            Backup: {previewCounts.clients} clients, {previewCounts.sessions} sessions, {previewCounts.charges} charges.
+            <br />
+            On this phone now: {clients.length} clients, {sessions.length} sessions, {charges.length} charges.
+          </div>
+          <button data-ui="restore-replace" style={dangerBtn} onClick={applyRestore}>Replace all data on this phone</button>
+          <button style={ghostBtn} onClick={function () { setRestorePreview(null); }}>Cancel</button>
+        </div>}
+      </Modal>}
+
+      {modal === 'client' &&
+      <Modal title={editId ? 'Edit Client' : 'New Client'} onClose={closeModal}>
+        <p style={{fontSize:13, color:C.muted, marginBottom:14, lineHeight:1.5}}>Saving updates the current package. Renew keeps it in the history and starts a new one.</p>
+        {errorLine()}
+        <Lbl>Name</Lbl>
+        <input style={inp} placeholder="e.g. Jeremy" value={form.name || ''} onChange={function (e) { f({name:e.target.value}); }} />
+        <Lbl>Package Sessions</Lbl>
+        <input style={inp} type="number" placeholder="e.g. 20" value={form.packageSessions || ''} onChange={function (e) { f({packageSessions:e.target.value}); }} />
+        <Lbl>Package Value (AED)</Lbl>
+        <input style={inp} type="number" placeholder="e.g. 3500" value={form.packageValue || ''} onChange={function (e) { f({packageValue:e.target.value}); }} />
+        <Lbl>Start Date</Lbl>
+        <input style={inp} type="date" value={form.startDate || ''} onChange={function (e) { f({startDate:e.target.value}); }} />
         <button style={goldBtn} onClick={saveClient}>Save Client</button>
-        {editId&&<button style={ghostBtn} onClick={function(){delClient(editId);}}>Delete Client</button>}
+        {editId && <button style={ghostBtn} onClick={function () { openRenew(clients.filter(function (c) { return c.id === editId; })[0]); }}>Renew package</button>}
+        {editId && <button style={ghostBtn} onClick={function () { delClient(editId); }}>Delete Client</button>}
       </Modal>}
 
-      {modal==='charge'&&<Modal title="Log Charge" onClose={function(){setModal(null);}}>
+      {modal === 'renew' &&
+      <Modal title="Renew Package" onClose={closeModal}>
+        <p style={{fontSize:13, color:C.muted, marginBottom:14, lineHeight:1.5}}>The current package stays in the history. Sessions on or after the new start date count on the new package.</p>
+        {errorLine()}
+        <Lbl>Package Sessions</Lbl>
+        <input style={inp} type="number" placeholder="e.g. 20" value={form.packageSessions || ''} onChange={function (e) { f({packageSessions:e.target.value}); }} />
+        <Lbl>Package Value (AED)</Lbl>
+        <input style={inp} type="number" placeholder="e.g. 3500" value={form.packageValue || ''} onChange={function (e) { f({packageValue:e.target.value}); }} />
+        <Lbl>Start Date</Lbl>
+        <input style={inp} type="date" value={form.startDate || ''} onChange={function (e) { f({startDate:e.target.value}); }} />
+        <button style={goldBtn} onClick={saveRenew}>Save new package</button>
+      </Modal>}
+
+      {modal === 'package' &&
+      <Modal title="Edit Package" onClose={closeModal}>
+        {errorLine()}
+        <Lbl>Package Sessions</Lbl>
+        <input style={inp} type="number" value={form.packageSessions || ''} onChange={function (e) { f({packageSessions:e.target.value}); }} />
+        <Lbl>Package Value (AED)</Lbl>
+        <input style={inp} type="number" value={form.packageValue || ''} onChange={function (e) { f({packageValue:e.target.value}); }} />
+        <Lbl>Start Date</Lbl>
+        <input style={inp} type="date" value={form.startDate || ''} onChange={function (e) { f({startDate:e.target.value}); }} />
+        <button style={goldBtn} onClick={savePackageEdit}>Save Package</button>
+      </Modal>}
+
+      {modal === 'session' &&
+      <Modal title={editId ? 'Edit Session' : 'Add Session'} onClose={closeModal}>
+        {errorLine()}
+        {!form.clientId && form.clientName ? <p style={{fontSize:13, color:C.mid, marginTop:-4, marginBottom:12, lineHeight:1.45}}>Imported as &ldquo;{form.clientName}&rdquo;. Choose which client it belongs to.</p> : null}
         <Lbl>Client</Lbl>
-        <select style={inp} value={form.clientId||''} onChange={function(e){f({clientId:e.target.value});}}>
+        <select data-ui="session-client" style={inp} value={form.clientId || ''} onChange={function (e) { f({clientId:e.target.value}); }}>
           <option value="">Select client...</option>
-          {clients.map(function(c){return <option key={c.id} value={c.id}>{c.name}</option>;})}
+          {clients.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option>; })}
+        </select>
+        {clients.length === 0 && <p style={{fontSize:13, color:C.mid, marginTop:-4, marginBottom:12}}>Add a client first, then you can log a session.</p>}
+        <Lbl>Date</Lbl>
+        <input data-ui="session-date" style={inp} type="date" value={form.date || ''} onChange={function (e) { f({date:e.target.value}); }} />
+        <button data-ui="session-save" style={goldBtn} onClick={saveSession}>Save Session</button>
+        {editId && <button style={dangerBtn} onClick={function () { var s = null, i; for (i = 0; i < sessions.length; i++) if (sessions[i].id === editId) s = sessions[i]; if (s) askDeleteSession(s); }}>Delete Session</button>}
+      </Modal>}
+
+      {modal === 'charge' &&
+      <Modal title={editId ? 'Edit Charge' : 'Log Charge'} onClose={closeModal}>
+        {errorLine()}
+        <Lbl>Client</Lbl>
+        <select style={inp} value={form.clientId || ''} onChange={function (e) { f({clientId:e.target.value}); }}>
+          <option value="">Select client...</option>
+          {clients.map(function (c) { return <option key={c.id} value={c.id}>{c.name}</option>; })}
         </select>
         <Lbl>Type</Lbl>
-        <select style={inp} value={form.type||'late_cancel'} onChange={function(e){f({type:e.target.value});}}>
+        <select style={inp} value={form.type || 'late_cancel'} onChange={function (e) { f({type:e.target.value}); }}>
           <option value="late_cancel">Late Cancellation</option>
           <option value="no_show">No Show</option>
           <option value="other">Other</option>
         </select>
-        <Lbl>Date</Lbl><input style={inp} type="date" value={form.date||''} onChange={function(e){f({date:e.target.value});}}/>
-        <Lbl>Notes (optional)</Lbl><input style={inp} placeholder="e.g. Cancelled 1h before" value={form.notes||''} onChange={function(e){f({notes:e.target.value});}}/>
-        <button style={goldBtn} onClick={saveCharge}>Save Charge</button>
+        <Lbl>Amount (AED)</Lbl>
+        <input data-ui="charge-amount" style={inp} type="number" min="0" step="0.01" inputMode="decimal" placeholder="e.g. 150" value={form.amount === 0 || form.amount ? form.amount : ''} onChange={function (e) { f({amount:e.target.value}); }} />
+        <Lbl>Date</Lbl>
+        <input style={inp} type="date" value={form.date || ''} onChange={function (e) { f({date:e.target.value}); }} />
+        <Lbl>Notes (optional)</Lbl>
+        <input style={inp} placeholder="e.g. Cancelled 1h before" value={form.notes || ''} onChange={function (e) { f({notes:e.target.value}); }} />
+        <button data-ui="save-charge" style={goldBtn} onClick={saveCharge}>Save Charge</button>
       </Modal>}
     </div>
   );
 }
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 </body>
 </html>
