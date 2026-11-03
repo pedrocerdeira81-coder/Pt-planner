@@ -5,24 +5,16 @@ var SESSION_HEADERS = ['eventId', 'calendarId', 'title', 'clientName', 'date', '
 var CHARGE_HEADERS = ['id', 'clientId', 'eventId', 'type', 'amount', 'date', 'notes', 'createdAt'];
 var SETTING_HEADERS = ['key', 'value'];
 
-function doGet(e) {
-  var boot = 'null';
-  try {
-    if (e && e.parameter && e.parameter.migrate) boot = safeJson_(importMigration_(e.parameter.migrate));
-  } catch (err) {
-    boot = safeJson_({ ok: false, error: String(err && err.message || err) });
-  }
-  var html = HtmlService.createHtmlOutputFromFile('Index').getContent();
-  html = html.replace('___PT_BOOT___', boot);
-  return HtmlService.createHtmlOutput(html)
+function doGet() {
+  return HtmlService.createHtmlOutput(appHtml_())
     .setTitle('PT Planner')
-    .setFaviconUrl('https://pedrocerdeira81-coder.github.io/Pt-planner/icons/apple-touch-icon.png')
+    .setFaviconUrl('https://pedrocerdeira81-coder.github.io/Pt-planner/icons/planner-180.png')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function doPost() {
-  return HtmlService.createHtmlOutput('<p>Open PT Planner from its link. Client lists are sent from the bring-over page.</p>').setTitle('PT Planner');
+function appHtml_() {
+  return HTML_LITERAL;
 }
 
 function dailySync() {
@@ -64,27 +56,13 @@ function apiSaveClient(obj) {
     assertOwner_();
     obj = obj || {};
     var clients = readClients_();
+    var sessions = readSessionsAll_();
+    var fields = packageFields_(obj);
     if (!obj.id) {
-      clients = PT.createClient(clients, {
-        name: clip_(obj.name, 80),
-        sessions: obj.sessions,
-        value: obj.value,
-        startDate: clip_(obj.startDate, 10)
-      });
+      clients = PT.createClient(clients, fields, sessions, clients);
     } else {
       clients = mapClient_(clients, obj.id, function (c) {
-        var next = c;
-        if (obj.mode === 'renew') next = PT.renewPackage(c, obj);
-        else next = PT.updateCurrentPackage(c, {
-          sessions: obj.sessions,
-          value: obj.value,
-          startDate: obj.startDate
-        });
-        if (obj.name && PT.normName(obj.name) !== PT.normName(next.name)) {
-          var renamed = PT.renameClient([next], obj.id, clip_(obj.name, 80));
-          next = renamed[0];
-        }
-        return next;
+        return PT.saveClientPackage(c, fields, sessions, clients);
       });
     }
     writeClients_(clients);
@@ -92,10 +70,21 @@ function apiSaveClient(obj) {
   });
 }
 
-function apiDeleteClient(id) {
+function apiDeleteClient(obj) {
   return withLock_(function () {
     assertOwner_();
-    var result = PT.deleteClient(readClients_(), readSessionsAll_(), id);
+    var id = obj && obj.id ? obj.id : obj;
+    var clients = readClients_();
+    var victim = null, i;
+    for (i = 0; i < clients.length; i++) if (String(clients[i].id) === String(id)) victim = clients[i];
+    var result = PT.deleteClient(clients, readSessionsAll_(), id);
+    var ignored = readIgnored_();
+    if (victim) {
+      var ig = PT.ignoreName(ignored, result.sessions, victim.name);
+      ignored = ig.ignored;
+      result.sessions = ig.sessions;
+    }
+    writeIgnored_(ignored);
     writeClients_(result.clients);
     writeSessions_(result.sessions);
     var charges = readCharges_().filter(function (ch) { return String(ch.clientId) !== String(id); });
@@ -120,9 +109,16 @@ function apiMap(obj) {
       clients = PT.createClient(clients, {
         name: name,
         sessions: obj.sessions,
+        sessionsLeft: obj.sessionsLeft,
         value: obj.value,
-        startDate: obj.startDate || todayDubai_()
-      });
+        startDate: obj.startDate || todayDubai_(),
+        expiry: obj.expiry,
+        paymentStatus: obj.paymentStatus,
+        amountReceived: obj.amountReceived,
+        method: obj.method,
+        paymentDate: obj.paymentDate,
+        note: obj.note
+      }, sessions, clients);
       var created = clients[clients.length - 1];
       var linkedNew = PT.linkName(clients, sessions, created.id, name);
       writeClients_(linkedNew.clients);
@@ -161,8 +157,8 @@ function apiSaveCharge(obj) {
     var amount = Number(obj.amount);
     if (!isFinite(amount) || amount < 0) throw new Error('Enter an amount in AED, or 0.');
     if (!obj.clientId) throw new Error('Choose a client.');
-    charges.push(PT.migrateCharge({
-      id: PT.uid(),
+    var entry = PT.migrateCharge({
+      id: obj.id || PT.uid(),
       clientId: String(obj.clientId),
       eventId: obj.eventId ? String(obj.eventId) : '',
       type: obj.type || 'other',
@@ -170,7 +166,13 @@ function apiSaveCharge(obj) {
       date: clip_(obj.date, 10) || todayDubai_(),
       notes: clip_(obj.notes, 500),
       createdAt: nowStamp_()
-    }));
+    });
+    var replaced = false;
+    charges = charges.map(function (ch) {
+      if (obj.id && String(ch.id) === String(obj.id)) { replaced = true; entry.createdAt = ch.createdAt || entry.createdAt; return entry; }
+      return ch;
+    });
+    if (!replaced) charges.push(entry);
     writeCharges_(charges);
     return publicState_();
   });
@@ -201,12 +203,15 @@ function apiSaveSettings(obj) {
     setSetting_('netFactor', String(comm.netFactor));
     setSetting_('includeCharges', comm.includeCharges ? 'yes' : '');
     setSetting_('showCommission', comm.showCommission ? 'yes' : 'no');
-    var start = clip_(obj.periodStart, 10);
-    var end = clip_(obj.periodEnd, 10);
-    if ((start && !end) || (!start && end)) throw new Error('Enter both dates, or clear both.');
-    if (start && end && end < start) throw new Error('The end date is before the start date.');
-    setSetting_('periodStart', start);
-    setSetting_('periodEnd', end);
+    return publicState_();
+  });
+}
+
+function apiSavePeriods(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    var saved = PT.savePeriods(PT.sortPeriods(parseJson_(getSetting_('periods'), [])), obj || {});
+    setSetting_('periods', JSON.stringify(saved.periods));
     return publicState_();
   });
 }
@@ -240,6 +245,7 @@ function runSync_(opts) {
     var ctx = {
       clients: readClients_(),
       ignored: readIgnored_(),
+      today: today,
       windowStart: PT.addDaysYmd(today, -400),
       windowEnd: PT.addDaysYmd(today, 60),
       nowStamp: nowStamp_()
@@ -247,9 +253,14 @@ function runSync_(opts) {
     var events = fetchEvents_(ctx.windowStart, ctx.windowEnd);
     var result = PT.applySync(readSessionsAll_(), events, ctx);
     writeSessions_(result.sessions);
+    writeClients_(result.clients || ctx.clients);
     setSetting_('lastSync', whenLabel_());
     setSetting_('triggerError', '');
-    var mail = PT.buildSummary({ clients: ctx.clients, sessions: result.sessions }, today, whenLabel_());
+    var mail = PT.buildSummary({
+      clients: result.clients || ctx.clients,
+      sessions: result.sessions,
+      settings: phoneSettings_()
+    }, today, whenLabel_());
     if (opts.email === 'now') {
       deliver_(mail);
     } else if (opts.email === 'trigger' && getSetting_('lastTriggerEmail') !== today) {
@@ -441,9 +452,26 @@ function phoneSettings_() {
     includeCharges: getSetting_('includeCharges') === 'yes',
     showCommission: show === 'no' ? false : true
   });
-  comm.periodStart = getSetting_('periodStart') || '';
-  comm.periodEnd = getSetting_('periodEnd') || '';
+  comm.periods = PT.sortPeriods(parseJson_(getSetting_('periods'), []));
   return comm;
+}
+
+function packageFields_(obj) {
+  obj = obj || {};
+  return {
+    mode: obj.mode || '',
+    name: clip_(obj.name, 80),
+    sessions: obj.sessions,
+    sessionsLeft: obj.sessionsLeft,
+    value: obj.value,
+    startDate: clip_(obj.startDate, 10),
+    expiry: clip_(obj.expiry, 10),
+    paymentStatus: obj.paymentStatus,
+    amountReceived: obj.amountReceived,
+    method: obj.method,
+    paymentDate: clip_(obj.paymentDate, 10),
+    note: clip_(obj.note, 500)
+  };
 }
 
 function ss_() {

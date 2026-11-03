@@ -1,178 +1,148 @@
 # PT Planner
 
-Pedro’s sessions come from his Google Calendar. Clients, packages, and charges stay in a private Google Sheet on his own account. Nothing about a client is stored in this public website.
+Pedro’s sessions come from his Google Calendar. A title with **PT** in it, such as `Omar PT` or `Jeremy Pt`, becomes a client on its own. Clients, packages, payments, and pay periods stay in a private Google Sheet on his account. Nothing about a client is stored on this public website.
 
-The old page is still at the same address and still keeps whatever is saved in that browser. This new planner is a separate link he puts on his iPhone home screen.
+The old page is still at the same address. This planner is a separate link he puts on his iPhone.
 
-The pictures further down use made-up example clients. The green bar on each one says **Example data**.
+The pictures further down use made-up example clients. The green bar says **Example data**.
+
+His “month” is a J Club pay period with its own start and end, such as 30 Sep to 28 Oct, then 29 Oct to 29 Nov. The app never uses a calendar month.
 
 ## Set it up once, on the iPhone
 
-Use **Safari**. Sign in as **pedrocerdeira81@gmail.com** whenever Google asks. Do not use the Google Sheets app. Its menus hide the script.
+Use **Safari**. Sign in as **pedrocerdeira81@gmail.com** whenever Google asks. Do not use the Google Sheets app.
 
-You will paste two files. Tap the names here and they open:
+There is one file to paste: [Code.gs](apps-script/Code.gs)
 
-- [Code.gs](apps-script/Code.gs)
-- [Index.html](apps-script/Index.html)
+If a full address is easier, after this page is on the main site use:
 
-If a full address is easier to type, use these after this page is on the main site:
-
-- https://github.com/pedrocerdeira81-coder/Pt-planner/blob/main/apps-script/Code.gs
-- https://github.com/pedrocerdeira81-coder/Pt-planner/blob/main/apps-script/Index.html
+https://github.com/pedrocerdeira81-coder/Pt-planner/blob/main/apps-script/Code.gs
 
 ### Make the private sheet
 
 1. Open Safari.
-2. Tap the address bar at the top.
+2. Tap the address bar.
 3. Type `sheets.new` and tap Go.
-4. If Google asks you to sign in, tap **pedrocerdeira81@gmail.com** and finish signing in.
-5. Tap the title **Untitled spreadsheet** at the top of the page.
-6. Delete that title and type `PT Planner`.
-7. Tap the tick, or tap OK.
+4. If Google asks you to sign in, tap **pedrocerdeira81@gmail.com**.
+5. Tap the title **Untitled spreadsheet**.
+6. Type `PT Planner` and tap the tick or OK.
 
 ### Show the full menu
 
-8. Tap **AA** on the left side of the address bar.
-9. Tap **Request Desktop Website**.
-10. If you do not see a row of words that includes **Extensions**, pinch the page smaller with two fingers until you do.
+7. Tap **AA** on the left of the address bar.
+8. Tap **Request Desktop Website**.
+9. If you do not see **Extensions**, pinch the page smaller until that word appears.
 
-### Open the script
+### Open the script and paste it
 
-11. Tap **Extensions**.
-12. Tap **Apps Script**.
-13. A new tab opens. If Google asks you to sign in again, choose **pedrocerdeira81@gmail.com**.
-14. Tap the name **Untitled project** at the top left.
-15. Type `PT Planner` and tap **Rename**.
-
-### Paste the first file
-
-16. Open a new tab.
-17. Tap [Code.gs](apps-script/Code.gs). If that does not open, paste `https://github.com/pedrocerdeira81-coder/Pt-planner/blob/main/apps-script/Code.gs` into the address bar and tap Go.
-18. Tap **Raw**. The page should be only code, with no buttons around it.
-19. Tap and hold on the code, then tap **Select All**, then tap **Copy**.
-20. Go back to the Apps Script tab.
-21. Tap inside the code box. Tap and hold, tap **Select All**, then tap **Paste**. The box should no longer start with `function myFunction`. The first lines should mention PT Planner.
-22. If the paste looks like only a few lines, the copy was cut off. Repeat steps 18 to 21.
-23. Tap the save icon at the top. It looks like a floppy disk. Wait until it finishes.
-
-### Paste the screen
-
-24. In the Apps Script tab, next to **Files**, tap the **+** button.
-25. Tap **HTML**.
-26. Delete the suggested name and type `Index`. Do not type `.html`. Google adds that itself.
-27. Tap the tick.
-28. The new file has a few sample lines. Tap and hold in that file, tap **Select All**, then delete them so the file is empty.
-29. Open a new tab and tap [Index.html](apps-script/Index.html), or go to `https://github.com/pedrocerdeira81-coder/Pt-planner/blob/main/apps-script/Index.html`.
-30. Tap **Raw**.
-31. Tap and hold, tap **Select All**, then tap **Copy**. This file is long. If Select All only highlights a short piece, tap the page once and try Select All again.
-32. Go back to the **Index.html** file in Apps Script.
-33. Tap the empty file, then tap **Paste**.
-34. Tap the save icon again and wait until it finishes.
+10. Tap **Extensions**.
+11. Tap **Apps Script**.
+12. If Google asks you to sign in again, choose **pedrocerdeira81@gmail.com**.
+13. Tap **Untitled project** at the top left, type `PT Planner`, and tap **Rename**.
+14. Open a new tab and tap [Code.gs](apps-script/Code.gs).
+15. Tap **Raw**.
+16. Tap and hold the code, tap **Select All**, then tap **Copy**. The file is long. If only a short piece highlights, tap the page once and try Select All again.
+17. Go back to the Apps Script tab.
+18. Tap inside the code box, tap and hold, tap **Select All**, then tap **Paste**. The first lines should mention PT Planner, not `function myFunction`.
+19. Tap the save icon at the top and wait until it finishes.
 
 ### Turn it into a private app
 
-35. Tap **Deploy** at the top right.
-36. Tap **New deployment**.
-37. Next to **Select type**, tap the gear icon.
-38. Tap **Web app**.
-39. Tap the description box and type `PT Planner`.
-40. **Execute as** must say **Me** and show pedrocerdeira81@gmail.com. If it does not, tap it and choose **Me**.
-41. Tap **Who has access** and choose **Only myself**. Do not choose Anyone. Anyone with the link could then see client names.
-42. Tap **Deploy**.
-43. Tap **Authorize access**.
-44. Tap **pedrocerdeira81@gmail.com**.
-45. Google says this app isn’t verified. That is expected, because it is your own script. Tap **Advanced**.
-46. Tap **Go to PT Planner (unsafe)**.
-47. If you see switches for Calendar, Sheets, or email, leave every switch on.
-48. Tap **Allow**.
-49. A box shows a link that starts with `https://script.google.com/` and ends with `/exec`. Tap **Copy**.
-50. Paste that link into the Notes app so you still have it if the home-screen icon is deleted. Then go back and tap **Done**.
+20. Tap **Deploy**.
+21. Tap **New deployment**.
+22. Next to **Select type**, tap the gear.
+23. Tap **Web app**.
+24. In the description box, type `PT Planner`.
+25. **Execute as** must say **Me** and show pedrocerdeira81@gmail.com. If it does not, tap it and choose **Me**.
+26. Tap **Who has access** and choose **Only myself**. Do not choose Anyone.
+27. Tap **Deploy**.
+28. Tap **Authorize access**.
+29. Tap **pedrocerdeira81@gmail.com**.
+30. Google says the app isn’t verified. Tap **Advanced**.
+31. Tap **Go to PT Planner (unsafe)**.
+32. Leave every switch on.
+33. Tap **Allow**.
+34. Tap **Copy** on the link that ends in `/exec`.
+35. Paste that link into Notes, then tap **Done**.
 
-### Open it and add the home-screen icon
+### Put it on the home screen
 
-51. Tap the address bar, paste the link, and tap Go.
-52. Wait while it reads the calendar. The first time can take a minute. If Google asks you to allow something else, tap **Advanced**, then **Go to PT Planner (unsafe)**, then **Allow**.
-53. Tap the **Share** button at the bottom of Safari. It is a square with an arrow pointing up.
-54. Scroll the list and tap **Add to Home Screen**.
-55. The name should say **PT Planner**. If it does not, type `PT Planner`.
-56. If you see **Open as Web App**, leave it switched on.
-57. Tap **Add**.
-58. Swipe to the home screen and tap the new **PT Planner** icon.
+36. Tap the address bar, paste the link, and tap Go.
+37. Wait while it reads the calendar. If Google asks again, tap **Advanced**, then **Go to PT Planner (unsafe)**, then **Allow**.
+38. Tap **Share** at the bottom of Safari. It is a square with an arrow pointing up.
+39. Tap **Add to Home Screen**.
+40. Leave the name as **PT Planner**. If you see **Open as Web App**, leave it on.
+41. Tap **Add**.
+42. Tap the new **PT Planner** icon.
 
-The 5:00 check is turned on by that first open. You do not set an alarm.
+The 5:00 check turns on when that page opens. You do not set an alarm.
 
-### Sort calendar names
+### Set the pay period
 
-59. If the planner says a name needs sorting, tap that row.
-60. If that person is already a client, choose them in the list and tap **Match to this client**.
-61. If they are new, type the number of sessions, the price in AED, and the start date, then tap **Save as a new client**.
-62. If the event is not a client, tap **Ignore this name**. Lunch, birthdays, and similar events can be ignored. **Resumo** and **New month** are already skipped.
+43. On Home, under the date, tap the start date and the end date for the current J Club period.
+44. Tap **Save period**.
+45. Sessions, charges, earnings, and commission all use those two dates.
+46. When the gym starts the next period, tap **Next period**, enter the new start and end, and tap **Save**. That period becomes the one you are looking at.
+47. Tap **Previous** to see an older period. Tap **Edit these dates** to change either date. The numbers update as soon as you tap **Save**.
 
-Titles like `Larissa PT`, `Jeremy Pt`, and `Mohammad family PT` are read as client names. A title with no PT, such as `Aurelie`, is shown once so you can match it or ignore it.
+### Fill in each package
 
-### Add a client by hand
+A calendar title with PT creates the client. The package starts today, so older sessions do not use it up.
 
-63. Tap **Clients** at the bottom.
-64. Tap **Add a client**.
-65. Type the name the way it appears on the calendar, without the word PT.
-66. Type how many sessions are in the current package, the price in AED, and the day the package started.
-67. Tap **Add client**.
+48. Tap a client that says **Set package**, or tap **Clients**, then the person.
+49. Tap **Fix numbers** (it may say that on the client page).
+50. Enter the package size, how many are left, the price in AED, and the start date.
+51. Expiry is optional.
+52. Choose **Unpaid**, **Part paid**, or **Paid**. Enter the amount received, cash, card, or bank transfer, the payment date, and a note if you want one.
+53. Tap **Save**.
 
-### Bring over the old list, if Safari still has it
+Names without PT, such as a bare first name, stay under **name to sort**. Match them, save them as a client, or tap **Ignore this name**. **Resumo** and **New month** are already skipped.
 
-68. In the planner, tap the sliders icon at the top right.
-69. Tap **Bring over old clients**.
-70. Safari opens a page with the clients saved by the old planner.
-71. If it says no clients were found, they only exist inside the old home-screen icon and cannot be copied. Use **Add a client** instead, and skip to the next section.
-72. If the names look right, tap **Add these clients to PT Planner**.
-73. The planner opens again and says how many clients it added. Old sessions are not copied. The calendar is what fills sessions, so they are not counted twice.
+### Check the morning email
 
-### Check that the morning email arrives
+54. Tap the sliders icon.
+55. Tap **Email today’s summary**.
+56. Open Gmail and find the subject `PT Planner daily sync`.
 
-74. Tap the sliders icon.
-75. Tap **Email today’s summary**.
-76. Open the Gmail app.
-77. Open the message whose subject is exactly `PT Planner daily sync`.
-
-After this, leave it. Around 5:00 Dubai time each day, the same email arrives even if the iPhone stays closed. It can be a little before or after 5:00. Google does not start it at the exact second. It is usually within about 15 minutes.
+After that, leave it. Around 5:00 Dubai time the same email arrives even if the phone stays closed. Google may start it up to about 15 minutes either side of 5:00.
 
 ## Day to day
 
-- **Home** is today, plus anyone who is low (1 or 2 left) or out.
-- **Week** is the sessions for the week.
-- Tap a session to mark it **Normal**, **Free**, or **Charged**. Free does not use a package session. Normal and charged do. A note on the calendar, such as “Charged” or “Free pra compensar”, is shown on the session and suggested the first time.
-- **Clients** shows what is left. **Renew** keeps the old package in the history. The new package must start after the old one.
-- **Report** is the month, with the commission estimate. The gear can hide that estimate. The usual quota starts at 7,758 AED and the net factor at 81.63%. Charges in AED are left out of the commission until you switch that on.
-- **Update from Calendar** checks again without waiting for 5:00.
+- **Home** shows the pay period, what you expect to earn in it, what is still to collect, the commission estimate, today’s sessions, who owes money, and who is low or out.
+- **Week** is the calendar week. Package counts still follow the pay period and each client’s start date.
+- Tap a session to mark it **Normal**, **Free**, or **Charged**. Free does not use a session. Normal and charged do.
+- **Renew** keeps the old package in the history. The new one must start after the old one.
+- **Report** and **Charges** use the pay period you are viewing.
+- The quota in the gear is for one pay period. It starts at 7,758 AED, with a net factor of 81.63%. Up to 80 sessions is 45%, 81–100 is 60%, 101–119 is 65%, and 120 or more is 70%. Charges stay out of the commission until you switch that on.
+- **Update from Calendar** checks again before 5:00.
 
 ## Good to know
 
 - The planner needs the internet.
-- Client names live in the Google Sheet called PT Planner. Do not delete the tabs in that sheet. Do not put client names into the files on this website.
-- The public GitHub page cannot see the sheet.
-- If the home-screen icon later asks you to sign in, open the saved link in Safari while you are signed in, then open the icon again.
+- Client names live only in the Google Sheet called PT Planner. Do not delete its tabs.
+- If the home-screen icon later asks you to sign in, open the saved link in Safari, then open the icon again.
 - If you change your Google password, open the planner and tap **Allow** if Google asks.
 
 ## What the screens look like
 
-These are example clients, not Pedro’s.
+These are example clients, not Pedro’s. The sample period is 29 Oct to 29 Nov.
 
-![Home, with example sessions and packages](docs/screenshots/01-home.png)
+![Home with the pay period, earnings, and today’s example sessions](docs/screenshots/01-home.png)
 
-![Week of example sessions](docs/screenshots/02-week.png)
+![Example week](docs/screenshots/02-week.png)
 
-![Example client list](docs/screenshots/03-clients.png)
+![Example clients](docs/screenshots/03-clients.png)
 
-![One example client, with package history](docs/screenshots/04-client.png)
+![One example package, with history](docs/screenshots/04-client.png)
 
-![Example monthly report](docs/screenshots/05-report.png)
+![Example pay-period report](docs/screenshots/05-report.png)
 
-![Example charges in AED](docs/screenshots/06-charges.png)
+![Example charges in the pay period](docs/screenshots/06-charges.png)
 
-![Matching an example calendar name](docs/screenshots/07-names.png)
+![A name without PT, still to sort](docs/screenshots/07-names.png)
 
 ## For the assistant
 
-The morning summary is the email above. The exact layout is in [docs/daily-email.md](docs/daily-email.md). Read it from pedrocerdeira81@gmail.com. There is no sheet access and no public data link.
+Read `PT Planner daily sync` in pedrocerdeira81@gmail.com. The layout, including the `Period:` line, is in [docs/daily-email.md](docs/daily-email.md).
 
-Pedro has to be the one who pastes the files, taps Deploy, and taps Allow, because the script has to run as his Google account. Someone with him can point at the buttons. They cannot finish it from another computer without his sign-in.
+Pedro has to paste the one file, tap Deploy, and tap Allow. The script has to run as his Google account. You can point at the buttons. You cannot finish those taps without him.

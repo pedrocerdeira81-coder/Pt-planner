@@ -54,11 +54,22 @@ var PT = (function () {
     if (v == null || v === '') return '';
     return String(v);
   }
-  function inPeriod(d, period, today) {
-    if (!d) return false;
+  function inPeriod(d, period) {
+    if (!d || !period || !period.start || !period.end) return false;
     var date = String(d).slice(0, 10);
-    if (!period || !period.start || !period.end) return date.slice(0, 7) === String(today || '').slice(0, 7);
     return date >= String(period.start) && date <= String(period.end);
+  }
+  function paymentStatusOf(v) {
+    v = String(v || '').toLowerCase();
+    if (v === 'paid') return 'paid';
+    if (v === 'part' || v === 'part-paid' || v === 'part_paid') return 'part';
+    return 'unpaid';
+  }
+  function methodOf(v) {
+    v = String(v || '').toLowerCase();
+    if (v === 'cash' || v === 'card' || v === 'transfer') return v;
+    if (v === 'bank' || v === 'bank transfer') return 'transfer';
+    return '';
   }
   function getTier(n) {
     n = Number(n) || 0;
@@ -78,11 +89,20 @@ var PT = (function () {
     p = p || {};
     var sessions = (p.sessions != null && p.sessions !== '') ? p.sessions : p.packageSessions;
     var value = (p.value != null && p.value !== '') ? p.value : p.packageValue;
+    var left = (p.sessionsLeft != null && p.sessionsLeft !== '') ? p.sessionsLeft : '';
+    var received = (p.amountReceived != null && p.amountReceived !== '') ? p.amountReceived : '';
     return {
       id: p.id ? String(p.id) : String(fallbackId || uid()),
       sessions: asAmountString(sessions),
+      sessionsLeft: left === '' ? '' : String(left),
       value: asAmountString(value),
-      startDate: p.startDate ? String(p.startDate).slice(0, 10) : ''
+      startDate: p.startDate ? String(p.startDate).slice(0, 10) : '',
+      expiry: p.expiry ? String(p.expiry).slice(0, 10) : '',
+      paymentStatus: paymentStatusOf(p.paymentStatus),
+      amountReceived: received === '' ? '' : String(received),
+      method: methodOf(p.method),
+      paymentDate: p.paymentDate ? String(p.paymentDate).slice(0, 10) : '',
+      note: p.note != null ? String(p.note) : ''
     };
   }
   function sortPackages(packages) {
@@ -106,12 +126,7 @@ var PT = (function () {
     var cur = currentPackage(client.packages);
     var packages = [], list = client.packages || [], i;
     for (i = 0; i < list.length; i++) {
-      packages.push({
-        id: String(list[i].id),
-        sessions: String(list[i].sessions),
-        value: String(list[i].value),
-        startDate: list[i].startDate || ''
-      });
+      packages.push(normalizePackage(list[i], list[i].id));
     }
     return {
       id: String(client.id),
@@ -135,7 +150,14 @@ var PT = (function () {
         id: id + '-pkg1',
         sessions: c.packageSessions,
         value: c.packageValue,
-        startDate: c.startDate
+        startDate: c.startDate,
+        sessionsLeft: c.sessionsLeft,
+        expiry: c.expiry,
+        paymentStatus: c.paymentStatus,
+        amountReceived: c.amountReceived,
+        method: c.method,
+        paymentDate: c.paymentDate,
+        note: c.note
       }, id + '-pkg1'));
     }
     var rawAliases = Array.isArray(c.aliases) ? c.aliases : [];
@@ -196,7 +218,53 @@ var PT = (function () {
   }
   function normalizePeriod(p) {
     p = p || {};
-    return { start: p.start ? String(p.start).slice(0, 10) : '', end: p.end ? String(p.end).slice(0, 10) : '' };
+    var start = p.start ? String(p.start).slice(0, 10) : '';
+    var end = p.end ? String(p.end).slice(0, 10) : '';
+    return { id: p.id ? String(p.id) : uid(), start: start, end: end };
+  }
+  function sortPeriods(list) {
+    var out = [], i, p;
+    for (i = 0; i < (list || []).length; i++) {
+      p = normalizePeriod(list[i]);
+      if (!p.start || !p.end || p.end < p.start) continue;
+      out.push(p);
+    }
+    out.sort(function (a, b) {
+      if (a.start < b.start) return -1;
+      if (a.start > b.start) return 1;
+      if (a.end < b.end) return -1;
+      if (a.end > b.end) return 1;
+      return 0;
+    });
+    return out;
+  }
+  function activePeriod(periods, today) {
+    var list = sortPeriods(periods), i, hit = null, past = null;
+    today = String(today || '');
+    for (i = 0; i < list.length; i++) {
+      if (today && today >= list[i].start && today <= list[i].end) hit = list[i];
+      if (today && list[i].end < today) past = list[i];
+    }
+    if (hit) return hit;
+    if (past) return past;
+    return list.length ? list[list.length - 1] : null;
+  }
+  function savePeriods(existing, fields) {
+    var list = sortPeriods(existing);
+    var start = fields && fields.start ? String(fields.start).slice(0, 10) : '';
+    var end = fields && fields.end ? String(fields.end).slice(0, 10) : '';
+    if (!start || !end) throw new Error('Enter the start and the end.');
+    if (end < start) throw new Error('The end date is before the start date.');
+    var id = fields.id ? String(fields.id) : '';
+    var next = [], found = false, i, made = id || uid();
+    for (i = 0; i < list.length; i++) {
+      if (id && String(list[i].id) === id) {
+        next.push({ id: id, start: start, end: end });
+        found = true;
+      } else next.push(list[i]);
+    }
+    if (!found) next.push({ id: made, start: start, end: end });
+    return { periods: sortPeriods(next), id: found ? id : made };
   }
   function resolvedNetFactor(comm) {
     var n = Number(comm && comm.netFactor);
@@ -368,23 +436,65 @@ var PT = (function () {
     out.sort(compareSessions);
     return out;
   }
+  function packageReady(pkg) {
+    return !!(pkg && String(pkg.sessions) !== '' && Number(pkg.sessions) > 0);
+  }
+  function openingLeft(pkg) {
+    if (!pkg) return 0;
+    if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
+    return Number(pkg.sessions) || 0;
+  }
+  function moneyDue(client) {
+    var pkg = currentPackage(client && client.packages);
+    if (!pkg) return null;
+    var price = Number(pkg.value) || 0;
+    var got = Number(pkg.amountReceived);
+    if (!isFinite(got) || got < 0) got = 0;
+    var due = Math.max(0, price - got);
+    var status = pkg.paymentStatus || 'unpaid';
+    if (status === 'paid' || !(price > 0)) return null;
+    if (due <= 0) return null;
+    return { id: client.id, name: client.name, due: due, status: status, price: price, received: got };
+  }
+  function clientsWhoOwe(clients) {
+    var out = [], i, row;
+    for (i = 0; i < (clients || []).length; i++) {
+      row = moneyDue(clients[i]);
+      if (row) out.push(row);
+    }
+    out.sort(function (a, b) { return b.due - a.due; });
+    return out;
+  }
   function currentRemaining(client, sessions, allClients) {
     var pkg = currentPackage(client && client.packages);
     var total = pkg ? (Number(pkg.sessions) || 0) : 0;
     var used = packageUsed(client, sessions, pkg, allClients || [client]);
-    var remaining = total - used;
+    var opening = openingLeft(pkg);
+    var remaining = opening - used;
     var per = sessionRate(pkg);
+    var ready = packageReady(pkg);
+    var price = pkg ? Number(pkg.value || 0) : 0;
+    var got = pkg ? Number(pkg.amountReceived) : 0;
+    if (!isFinite(got) || got < 0) got = 0;
     return {
       used: used,
       total: total,
       remaining: remaining,
       perSession: per,
       remainingValue: remaining * per,
-      low: remaining > 0 && remaining <= LOW_AT,
-      out: remaining <= 0,
+      low: ready && remaining > 0 && remaining <= LOW_AT,
+      out: ready && remaining <= 0,
+      ready: ready,
       packageId: pkg ? pkg.id : '',
-      value: pkg ? Number(pkg.value || 0) : 0,
-      startDate: pkg ? pkg.startDate : ''
+      value: price,
+      startDate: pkg ? pkg.startDate : '',
+      expiry: pkg ? pkg.expiry : '',
+      paymentStatus: pkg ? (pkg.paymentStatus || 'unpaid') : 'unpaid',
+      amountReceived: got,
+      due: Math.max(0, price - got),
+      method: pkg ? pkg.method : '',
+      paymentDate: pkg ? pkg.paymentDate : '',
+      note: pkg ? pkg.note : ''
     };
   }
   function assertClientName(clients, name, exceptId) {
@@ -433,7 +543,7 @@ var PT = (function () {
     if (sessions == null || sessions === '' || !(Number(sessions) > 0)) throw new Error('Add the number of sessions.');
     if (!start) throw new Error('Add the start date.');
     if (cur && cur.startDate && start <= cur.startDate) throw new Error('Use a start date after ' + cur.startDate + '.');
-    var pkg = normalizePackage({ id: uid(), sessions: sessions, value: fields.value, startDate: start });
+    var pkg = normalizePackage(Object.assign({}, fields, { id: uid(), sessions: sessions, value: fields.value, startDate: start }));
     var packages = (client.packages || []).concat([pkg]);
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: packages });
   }
@@ -445,29 +555,63 @@ var PT = (function () {
     var nextPkgs = [], i;
     for (i = 0; i < packages.length; i++) {
       if (String(packages[i].id) !== String(cur.id)) { nextPkgs.push(packages[i]); continue; }
-      nextPkgs.push(normalizePackage({
-        id: packages[i].id,
-        sessions: fields.sessions,
-        value: fields.value,
-        startDate: fields.startDate
-      }, packages[i].id));
+      nextPkgs.push(normalizePackage(Object.assign({}, packages[i], fields, { id: packages[i].id }), packages[i].id));
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
-  function createClient(clients, fields) {
+  function createClient(clients, fields, sessions, allClients) {
     var name = collapseSpace(fields && fields.name);
     assertClientName(clients, name);
-    var sessions = fields.sessions;
-    if (sessions == null || sessions === '' || !(Number(sessions) > 0)) throw new Error('Add the number of sessions.');
-    var client = migrateClient({
+    if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
+    var shell = migrateClient({
       id: fields.id || uid(),
       name: name,
-      packageSessions: sessions,
+      packageSessions: fields.sessions,
       packageValue: fields.value || 0,
       startDate: fields.startDate || '',
+      sessionsLeft: '',
+      expiry: fields.expiry || '',
+      paymentStatus: fields.paymentStatus,
+      amountReceived: fields.amountReceived,
+      method: fields.method,
+      paymentDate: fields.paymentDate,
+      note: fields.note || '',
       aliases: []
     });
-    return (clients || []).concat([client]);
+    var saved = saveClientPackage(shell, fields, sessions || [], allClients || (clients || []).concat([shell]));
+    return (clients || []).concat([saved]);
+  }
+  function saveClientPackage(client, fields, sessions, allClients) {
+    fields = fields || {};
+    var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
+    if (fields.name && normName(fields.name) !== normName(next.name)) {
+      var renamed = renameClient([next], next.id, fields.name);
+      next = renamed[0];
+    }
+    var pkg = currentPackage(next.packages);
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
+    var desired = (fields.sessionsLeft === '' || fields.sessionsLeft == null) ? (Number(fields.sessions) || 0) : Number(fields.sessionsLeft);
+    if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
+    var packages = [], i;
+    for (i = 0; i < next.packages.length; i++) {
+      if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
+      var copy = normalizePackage(next.packages[i]);
+      copy.sessionsLeft = String(desired + counted);
+      packages.push(copy);
+    }
+    return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function blankAutoClient(name, today) {
+    return migrateClient({
+      id: uid(),
+      name: name,
+      packageSessions: '',
+      packageValue: '',
+      startDate: today || '',
+      sessionsLeft: '',
+      paymentStatus: 'unpaid',
+      aliases: []
+    });
   }
   function renameClient(clients, clientId, name) {
     var label = collapseSpace(name);
@@ -489,12 +633,11 @@ var PT = (function () {
   function parseTitle(title) {
     var trimmed = collapseSpace(title).replace(/[.。]+$/g, '').trim();
     if (!trimmed) return { display: '', key: '', explicit: false };
-    var m = trimmed.match(/^(.*?)(?:\s*[-–—|:]\s*|\s+)pt$/i);
-    if (m && collapseSpace(m[1])) {
-      var display = collapseSpace(m[1]);
-      return { display: display, key: normName(display), explicit: true };
-    }
-    return { display: trimmed, key: normName(trimmed), explicit: false };
+    if (!/\bpt\b/i.test(trimmed)) return { display: trimmed, key: normName(trimmed), explicit: false };
+    var display = collapseSpace(trimmed.replace(/\bpt\b/ig, ' ')).replace(/^[-–—|:,]+|[-–—|:,]+$/g, '').trim();
+    display = collapseSpace(display);
+    if (!display) return { display: '', key: '', explicit: true };
+    return { display: display, key: normName(display), explicit: true };
   }
   function looksLikeClientName(display) {
     var s = collapseSpace(display);
@@ -582,6 +725,7 @@ var PT = (function () {
   }
   function applySync(prevSessions, events, ctx) {
     ctx = ctx || {};
+    var clients = (ctx.clients || []).slice();
     var byId = {}, i, list = prevSessions || [];
     for (i = 0; i < list.length; i++) {
       if (!list[i] || !list[i].eventId) continue;
@@ -601,7 +745,7 @@ var PT = (function () {
       seen[id] = true;
       var parsed = parseTitle(ev.title);
       if (!parsed.key || parsed.key === 'pt' || parsed.key.length < 2) continue;
-      if (isBuiltinIgnore(parsed.key)) continue;
+      if (!parsed.explicit && isBuiltinIgnore(parsed.key)) continue;
       var prev = byId[id];
       if (isIgnoredName(ctx.ignored, parsed.key)) {
         if (prev) {
@@ -613,12 +757,25 @@ var PT = (function () {
         }
         continue;
       }
-      var hits = clientsForName(ctx.clients, parsed.display);
+      var hits = clientsForName(clients, parsed.display);
       var explicit = parsed.explicit;
       var nameLike = looksLikeClientName(parsed.display) && !isStoplist(parsed.key);
-      if (!explicit && hits.length === 0 && !nameLike) continue;
-      if (!explicit && isStoplist(parsed.key) && hits.length === 0) continue;
-      var disposition = hits.length === 1 ? 'kept' : 'pending';
+      var disposition = 'pending';
+      if (explicit) {
+        if (hits.length > 1) disposition = 'pending';
+        else {
+          if (!hits.length) {
+            var made = blankAutoClient(parsed.display, ctx.today || '');
+            clients = clients.concat([made]);
+            hits = [made];
+          }
+          disposition = 'kept';
+        }
+      } else {
+        if (hits.length === 0 && !nameLike) continue;
+        if (hits.length === 0 && isStoplist(parsed.key)) continue;
+        disposition = hits.length === 1 ? 'kept' : 'pending';
+      }
       if (!prev) {
         var row = blankSession(ev, parsed, ctx.nowStamp || '');
         row.disposition = disposition;
@@ -653,7 +810,7 @@ var PT = (function () {
     for (i = 0; i < ids.length; i++) sessions.push(byId[ids[i]]);
     sessions.sort(compareSessions);
     added.sort(compareSessions);
-    return { sessions: sessions, added: added };
+    return { sessions: sessions, added: added, clients: clients };
   }
   function summaryAdded(sessions, today) {
     var cutoff = addDaysYmd(today, -1);
@@ -684,7 +841,7 @@ var PT = (function () {
     var out = [], list = clients || [], i, stats;
     for (i = 0; i < list.length; i++) {
       stats = currentRemaining(list[i], sessions, list);
-      if (!(stats.low || stats.out)) continue;
+      if (!stats.ready || !(stats.low || stats.out)) continue;
       out.push({ name: list[i].name, remaining: stats.remaining, out: stats.out, low: stats.low });
     }
     out.sort(function (a, b) { return a.remaining - b.remaining; });
@@ -739,6 +896,7 @@ var PT = (function () {
     lines.push('PT Planner daily sync');
     lines.push('Status: ' + (report.ok === false ? 'failed' : 'ok'));
     lines.push('When: ' + (report.when || ''));
+    if (report.period) lines.push('Period: ' + report.period);
     lines.push('');
     if (report.ok === false) {
       lines.push('The automatic check did not finish.');
@@ -773,9 +931,11 @@ var PT = (function () {
     state = state || {};
     var sessions = state.sessions || [];
     var clients = state.clients || [];
+    var period = activePeriod((state.settings && state.settings.periods) || [], today);
     return buildDailyEmail({
       ok: true,
       when: whenLabel || (today + ' Asia/Dubai'),
+      period: period ? (period.start + ' to ' + period.end) : '',
       added: summaryAdded(sessions, today),
       olderSaved: olderSavedToday(sessions, today),
       low: lowClients(clients, sessions),
@@ -916,6 +1076,13 @@ var PT = (function () {
     mondayOf: mondayOf,
     uid: uid,
     inPeriod: inPeriod,
+    sortPeriods: sortPeriods,
+    activePeriod: activePeriod,
+    savePeriods: savePeriods,
+    saveClientPackage: saveClientPackage,
+    moneyDue: moneyDue,
+    clientsWhoOwe: clientsWhoOwe,
+    packageReady: packageReady,
     getTier: getTier,
     getTierLabel: getTierLabel,
     migrateClient: migrateClient,

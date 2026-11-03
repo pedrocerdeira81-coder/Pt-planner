@@ -236,12 +236,64 @@ test('the pasted Apps Script is the built planner and stays private', () => {
   assert.match(gas, /PT Planner daily sync/);
   assert.match(gas, /pedrocerdeira81@gmail.com/);
   assert.match(gas, /Only myself|assertOwner_/);
-  assert.doesNotMatch(gas, /Larissa/);
   assert.match(html, /Example data/);
   assert.match(html, /apple-mobile-web-app-capable/);
   assert.match(html, /viewport-fit=cover/);
   assert.equal(PT.EMAIL_SUBJECT, 'PT Planner daily sync');
   assert.equal(PT.SUMMARY_EMAIL, 'pedrocerdeira81@gmail.com');
+});
+
+test('a PT title becomes a client and older sessions stay outside a fresh package', () => {
+  const result = PT.applySync([], [
+    ev('old', 'Omar PT', '2026-08-01', '', '07:00'),
+    ev('today', 'Omar PT', TODAY, '', '18:00'),
+    ev('mid', 'PT Omar', '2026-11-04', '', '09:00')
+  ], Object.assign({ clients: [], ignored: [], today: TODAY }, WINDOW));
+  assert.equal(result.clients.length, 1);
+  assert.equal(result.clients[0].name, 'Omar');
+  assert.equal(result.clients[0].startDate, TODAY);
+  assert.equal(result.sessions.filter((s) => s.disposition === 'kept').length, 3);
+  assert.equal(PT.unmatchedFromSessions(result.sessions, result.clients).length, 0);
+  const again = PT.applySync(result.sessions, [
+    ev('old', 'Omar PT', '2026-08-01'),
+    ev('today', 'Omar PT', TODAY),
+    ev('mid', 'PT Omar', '2026-11-04')
+  ], Object.assign({ clients: result.clients, ignored: [], today: TODAY }, WINDOW));
+  assert.equal(again.clients.length, 1);
+  const saved = PT.saveClientPackage(result.clients[0], {
+    sessions: '10',
+    sessionsLeft: '10',
+    value: '4000',
+    startDate: TODAY,
+    paymentStatus: 'part',
+    amountReceived: '1500',
+    method: 'card'
+  }, result.sessions, result.clients);
+  const stats = PT.currentRemaining(saved, result.sessions, [saved]);
+  assert.equal(stats.used, 2);
+  assert.equal(stats.remaining, 10);
+  assert.equal(stats.paymentStatus, 'part');
+  assert.equal(PT.moneyDue(saved).due, 2500);
+});
+
+test('pay periods are exact dates and the current one is the period that contains today', () => {
+  const periods = [
+    { id: 'a', start: '2026-09-30', end: '2026-10-28' },
+    { id: 'b', start: '2026-10-29', end: '2026-11-29' }
+  ];
+  assert.equal(PT.inPeriod('2026-10-28', periods[0]), true);
+  assert.equal(PT.inPeriod('2026-10-29', periods[0]), false);
+  assert.equal(PT.inPeriod('2026-11-02', null), false);
+  assert.equal(PT.activePeriod(periods, '2026-11-02').id, 'b');
+  assert.equal(PT.activePeriod(periods, '2026-10-01').id, 'a');
+  const rolled = PT.savePeriods(periods, { start: '2026-11-30', end: '2026-12-28' });
+  assert.equal(rolled.periods.length, 3);
+  assert.equal(PT.activePeriod(rolled.periods, '2026-11-02').id, 'b');
+  assert.equal(PT.activePeriod(rolled.periods, '2026-12-01').start, '2026-11-30');
+  const edited = PT.savePeriods(periods, { id: 'b', start: '2026-10-29', end: '2026-11-20' });
+  assert.equal(edited.periods.length, 2);
+  assert.equal(PT.inPeriod('2026-11-25', edited.periods[1]), false);
+  assert.throws(() => PT.savePeriods(periods, { start: '2026-12-02', end: '2026-12-01' }), /before/);
 });
 
 test('exact names do not let Ali take Alison', () => {

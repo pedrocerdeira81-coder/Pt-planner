@@ -16,6 +16,7 @@ Google starts the job within about 15 minutes of 5:00, not always at 5:00:00. On
 PT Planner daily sync
 Status: ok
 When: 2026-11-02 05:07 Asia/Dubai
+Period: 2026-10-29 to 2026-11-29
 
 Sessions added: 1
 - Jeremy | 2026-11-02 09:00 | free | Free pra compensar outras sessoes
@@ -34,6 +35,7 @@ Unmatched names: 1
 - The first line is always `PT Planner daily sync`.
 - The second line is `Status: ok` or `Status: failed`.
 - `When:` is Dubai time.
+- `Period:` is the gym pay period that contains that morning, for example `2026-09-30 to 2026-10-28`. It is not a calendar month. The line is omitted if he has not saved a period yet.
 - `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
 - An empty section is `- None`.
 - A line is `Name | date time | normal|free|charged | note`.

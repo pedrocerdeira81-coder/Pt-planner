@@ -9,17 +9,18 @@
 <meta name="apple-mobile-web-app-title" content="PT Planner">
 <meta name="theme-color" content="#f4f0e8">
 <title>PT Planner</title>
-<link rel="apple-touch-icon" href="https://pedrocerdeira81-coder.github.io/Pt-planner/icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="https://pedrocerdeira81-coder.github.io/Pt-planner/icons/planner-180.png">
+<link rel="icon" href="https://pedrocerdeira81-coder.github.io/Pt-planner/icons/planner-180.png">
 <style>
 :root {
-  --bg: #efeae2;
-  --paper: #f7f4ef;
-  --card: #fffdfb;
-  --ink: #1c1916;
-  --muted: #7d756c;
-  --line: #e6dfd4;
-  --green: #146c43;
-  --green-soft: #e5f4ec;
+  --bg: #e7e2d8;
+  --paper: #f7f4ee;
+  --card: #fffcf8;
+  --ink: #1c211e;
+  --muted: #746d64;
+  --line: #e4dcd0;
+  --green: #0e6b4f;
+  --green-soft: #e5f3ec;
   --amber: #8a5a00;
   --amber-soft: #fff4d8;
   --red: #8e2f2f;
@@ -33,7 +34,8 @@ html, body { margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Avenir Next", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -64,10 +66,27 @@ button { cursor: pointer; }
   gap: 12px;
 }
 .brand {
-  font-family: ui-serif, Georgia, "Iowan Old Style", Palatino, serif;
-  font-size: 28px;
+  font-family: "Iowan Old Style", Palatino, ui-serif, Georgia, serif;
+  font-size: 30px;
   line-height: 1;
   letter-spacing: -0.03em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--green);
+  color: #f4fff8;
+  font-family: "Avenir Next", -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 750;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.04em;
 }
 .brand span { color: var(--green); }
 .sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
@@ -94,13 +113,18 @@ h2 {
   margin: 18px 0 10px;
   font-weight: 750;
 }
+.card, .row, .client, .primary, .ghost, .danger {
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
 .card {
   background: var(--card);
-  border-radius: 18px;
+  border-radius: 22px;
   box-shadow: var(--shadow);
-  padding: 14px 14px;
-  margin-bottom: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
 }
+.sheet { animation: rise .28s ease; }
+@keyframes rise { from { transform: translateY(18px); opacity: .5; } to { transform: none; opacity: 1; } }
 .row {
   width: 100%;
   text-align: left;
@@ -241,7 +265,12 @@ textarea { min-height: 80px; }
 .day-head { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 2px 8px; }
 .day-head b { font-size: 16px; }
 .today-mark { color: var(--green); }
-.empty { color: var(--muted); text-align: center; padding: 28px 10px; }
+.empty { color: var(--muted); text-align: center; padding: 32px 16px; line-height: 1.45; }
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+.stats div { background: var(--card); border-radius: 18px; padding: 12px 10px; box-shadow: var(--shadow); }
+.stats b { display: block; font-size: 15px; letter-spacing: -0.03em; margin-top: 4px; }
+.stats span { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; }
+button:disabled { opacity: .35; }
 .banner {
   background: var(--green-soft);
   color: var(--green);
@@ -332,11 +361,22 @@ var PT = (function () {
     if (v == null || v === '') return '';
     return String(v);
   }
-  function inPeriod(d, period, today) {
-    if (!d) return false;
+  function inPeriod(d, period) {
+    if (!d || !period || !period.start || !period.end) return false;
     var date = String(d).slice(0, 10);
-    if (!period || !period.start || !period.end) return date.slice(0, 7) === String(today || '').slice(0, 7);
     return date >= String(period.start) && date <= String(period.end);
+  }
+  function paymentStatusOf(v) {
+    v = String(v || '').toLowerCase();
+    if (v === 'paid') return 'paid';
+    if (v === 'part' || v === 'part-paid' || v === 'part_paid') return 'part';
+    return 'unpaid';
+  }
+  function methodOf(v) {
+    v = String(v || '').toLowerCase();
+    if (v === 'cash' || v === 'card' || v === 'transfer') return v;
+    if (v === 'bank' || v === 'bank transfer') return 'transfer';
+    return '';
   }
   function getTier(n) {
     n = Number(n) || 0;
@@ -356,11 +396,20 @@ var PT = (function () {
     p = p || {};
     var sessions = (p.sessions != null && p.sessions !== '') ? p.sessions : p.packageSessions;
     var value = (p.value != null && p.value !== '') ? p.value : p.packageValue;
+    var left = (p.sessionsLeft != null && p.sessionsLeft !== '') ? p.sessionsLeft : '';
+    var received = (p.amountReceived != null && p.amountReceived !== '') ? p.amountReceived : '';
     return {
       id: p.id ? String(p.id) : String(fallbackId || uid()),
       sessions: asAmountString(sessions),
+      sessionsLeft: left === '' ? '' : String(left),
       value: asAmountString(value),
-      startDate: p.startDate ? String(p.startDate).slice(0, 10) : ''
+      startDate: p.startDate ? String(p.startDate).slice(0, 10) : '',
+      expiry: p.expiry ? String(p.expiry).slice(0, 10) : '',
+      paymentStatus: paymentStatusOf(p.paymentStatus),
+      amountReceived: received === '' ? '' : String(received),
+      method: methodOf(p.method),
+      paymentDate: p.paymentDate ? String(p.paymentDate).slice(0, 10) : '',
+      note: p.note != null ? String(p.note) : ''
     };
   }
   function sortPackages(packages) {
@@ -384,12 +433,7 @@ var PT = (function () {
     var cur = currentPackage(client.packages);
     var packages = [], list = client.packages || [], i;
     for (i = 0; i < list.length; i++) {
-      packages.push({
-        id: String(list[i].id),
-        sessions: String(list[i].sessions),
-        value: String(list[i].value),
-        startDate: list[i].startDate || ''
-      });
+      packages.push(normalizePackage(list[i], list[i].id));
     }
     return {
       id: String(client.id),
@@ -413,7 +457,14 @@ var PT = (function () {
         id: id + '-pkg1',
         sessions: c.packageSessions,
         value: c.packageValue,
-        startDate: c.startDate
+        startDate: c.startDate,
+        sessionsLeft: c.sessionsLeft,
+        expiry: c.expiry,
+        paymentStatus: c.paymentStatus,
+        amountReceived: c.amountReceived,
+        method: c.method,
+        paymentDate: c.paymentDate,
+        note: c.note
       }, id + '-pkg1'));
     }
     var rawAliases = Array.isArray(c.aliases) ? c.aliases : [];
@@ -474,7 +525,53 @@ var PT = (function () {
   }
   function normalizePeriod(p) {
     p = p || {};
-    return { start: p.start ? String(p.start).slice(0, 10) : '', end: p.end ? String(p.end).slice(0, 10) : '' };
+    var start = p.start ? String(p.start).slice(0, 10) : '';
+    var end = p.end ? String(p.end).slice(0, 10) : '';
+    return { id: p.id ? String(p.id) : uid(), start: start, end: end };
+  }
+  function sortPeriods(list) {
+    var out = [], i, p;
+    for (i = 0; i < (list || []).length; i++) {
+      p = normalizePeriod(list[i]);
+      if (!p.start || !p.end || p.end < p.start) continue;
+      out.push(p);
+    }
+    out.sort(function (a, b) {
+      if (a.start < b.start) return -1;
+      if (a.start > b.start) return 1;
+      if (a.end < b.end) return -1;
+      if (a.end > b.end) return 1;
+      return 0;
+    });
+    return out;
+  }
+  function activePeriod(periods, today) {
+    var list = sortPeriods(periods), i, hit = null, past = null;
+    today = String(today || '');
+    for (i = 0; i < list.length; i++) {
+      if (today && today >= list[i].start && today <= list[i].end) hit = list[i];
+      if (today && list[i].end < today) past = list[i];
+    }
+    if (hit) return hit;
+    if (past) return past;
+    return list.length ? list[list.length - 1] : null;
+  }
+  function savePeriods(existing, fields) {
+    var list = sortPeriods(existing);
+    var start = fields && fields.start ? String(fields.start).slice(0, 10) : '';
+    var end = fields && fields.end ? String(fields.end).slice(0, 10) : '';
+    if (!start || !end) throw new Error('Enter the start and the end.');
+    if (end < start) throw new Error('The end date is before the start date.');
+    var id = fields.id ? String(fields.id) : '';
+    var next = [], found = false, i, made = id || uid();
+    for (i = 0; i < list.length; i++) {
+      if (id && String(list[i].id) === id) {
+        next.push({ id: id, start: start, end: end });
+        found = true;
+      } else next.push(list[i]);
+    }
+    if (!found) next.push({ id: made, start: start, end: end });
+    return { periods: sortPeriods(next), id: found ? id : made };
   }
   function resolvedNetFactor(comm) {
     var n = Number(comm && comm.netFactor);
@@ -646,23 +743,65 @@ var PT = (function () {
     out.sort(compareSessions);
     return out;
   }
+  function packageReady(pkg) {
+    return !!(pkg && String(pkg.sessions) !== '' && Number(pkg.sessions) > 0);
+  }
+  function openingLeft(pkg) {
+    if (!pkg) return 0;
+    if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
+    return Number(pkg.sessions) || 0;
+  }
+  function moneyDue(client) {
+    var pkg = currentPackage(client && client.packages);
+    if (!pkg) return null;
+    var price = Number(pkg.value) || 0;
+    var got = Number(pkg.amountReceived);
+    if (!isFinite(got) || got < 0) got = 0;
+    var due = Math.max(0, price - got);
+    var status = pkg.paymentStatus || 'unpaid';
+    if (status === 'paid' || !(price > 0)) return null;
+    if (due <= 0) return null;
+    return { id: client.id, name: client.name, due: due, status: status, price: price, received: got };
+  }
+  function clientsWhoOwe(clients) {
+    var out = [], i, row;
+    for (i = 0; i < (clients || []).length; i++) {
+      row = moneyDue(clients[i]);
+      if (row) out.push(row);
+    }
+    out.sort(function (a, b) { return b.due - a.due; });
+    return out;
+  }
   function currentRemaining(client, sessions, allClients) {
     var pkg = currentPackage(client && client.packages);
     var total = pkg ? (Number(pkg.sessions) || 0) : 0;
     var used = packageUsed(client, sessions, pkg, allClients || [client]);
-    var remaining = total - used;
+    var opening = openingLeft(pkg);
+    var remaining = opening - used;
     var per = sessionRate(pkg);
+    var ready = packageReady(pkg);
+    var price = pkg ? Number(pkg.value || 0) : 0;
+    var got = pkg ? Number(pkg.amountReceived) : 0;
+    if (!isFinite(got) || got < 0) got = 0;
     return {
       used: used,
       total: total,
       remaining: remaining,
       perSession: per,
       remainingValue: remaining * per,
-      low: remaining > 0 && remaining <= LOW_AT,
-      out: remaining <= 0,
+      low: ready && remaining > 0 && remaining <= LOW_AT,
+      out: ready && remaining <= 0,
+      ready: ready,
       packageId: pkg ? pkg.id : '',
-      value: pkg ? Number(pkg.value || 0) : 0,
-      startDate: pkg ? pkg.startDate : ''
+      value: price,
+      startDate: pkg ? pkg.startDate : '',
+      expiry: pkg ? pkg.expiry : '',
+      paymentStatus: pkg ? (pkg.paymentStatus || 'unpaid') : 'unpaid',
+      amountReceived: got,
+      due: Math.max(0, price - got),
+      method: pkg ? pkg.method : '',
+      paymentDate: pkg ? pkg.paymentDate : '',
+      note: pkg ? pkg.note : ''
     };
   }
   function assertClientName(clients, name, exceptId) {
@@ -711,7 +850,7 @@ var PT = (function () {
     if (sessions == null || sessions === '' || !(Number(sessions) > 0)) throw new Error('Add the number of sessions.');
     if (!start) throw new Error('Add the start date.');
     if (cur && cur.startDate && start <= cur.startDate) throw new Error('Use a start date after ' + cur.startDate + '.');
-    var pkg = normalizePackage({ id: uid(), sessions: sessions, value: fields.value, startDate: start });
+    var pkg = normalizePackage(Object.assign({}, fields, { id: uid(), sessions: sessions, value: fields.value, startDate: start }));
     var packages = (client.packages || []).concat([pkg]);
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: packages });
   }
@@ -723,29 +862,63 @@ var PT = (function () {
     var nextPkgs = [], i;
     for (i = 0; i < packages.length; i++) {
       if (String(packages[i].id) !== String(cur.id)) { nextPkgs.push(packages[i]); continue; }
-      nextPkgs.push(normalizePackage({
-        id: packages[i].id,
-        sessions: fields.sessions,
-        value: fields.value,
-        startDate: fields.startDate
-      }, packages[i].id));
+      nextPkgs.push(normalizePackage(Object.assign({}, packages[i], fields, { id: packages[i].id }), packages[i].id));
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
-  function createClient(clients, fields) {
+  function createClient(clients, fields, sessions, allClients) {
     var name = collapseSpace(fields && fields.name);
     assertClientName(clients, name);
-    var sessions = fields.sessions;
-    if (sessions == null || sessions === '' || !(Number(sessions) > 0)) throw new Error('Add the number of sessions.');
-    var client = migrateClient({
+    if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
+    var shell = migrateClient({
       id: fields.id || uid(),
       name: name,
-      packageSessions: sessions,
+      packageSessions: fields.sessions,
       packageValue: fields.value || 0,
       startDate: fields.startDate || '',
+      sessionsLeft: '',
+      expiry: fields.expiry || '',
+      paymentStatus: fields.paymentStatus,
+      amountReceived: fields.amountReceived,
+      method: fields.method,
+      paymentDate: fields.paymentDate,
+      note: fields.note || '',
       aliases: []
     });
-    return (clients || []).concat([client]);
+    var saved = saveClientPackage(shell, fields, sessions || [], allClients || (clients || []).concat([shell]));
+    return (clients || []).concat([saved]);
+  }
+  function saveClientPackage(client, fields, sessions, allClients) {
+    fields = fields || {};
+    var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
+    if (fields.name && normName(fields.name) !== normName(next.name)) {
+      var renamed = renameClient([next], next.id, fields.name);
+      next = renamed[0];
+    }
+    var pkg = currentPackage(next.packages);
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
+    var desired = (fields.sessionsLeft === '' || fields.sessionsLeft == null) ? (Number(fields.sessions) || 0) : Number(fields.sessionsLeft);
+    if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
+    var packages = [], i;
+    for (i = 0; i < next.packages.length; i++) {
+      if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
+      var copy = normalizePackage(next.packages[i]);
+      copy.sessionsLeft = String(desired + counted);
+      packages.push(copy);
+    }
+    return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function blankAutoClient(name, today) {
+    return migrateClient({
+      id: uid(),
+      name: name,
+      packageSessions: '',
+      packageValue: '',
+      startDate: today || '',
+      sessionsLeft: '',
+      paymentStatus: 'unpaid',
+      aliases: []
+    });
   }
   function renameClient(clients, clientId, name) {
     var label = collapseSpace(name);
@@ -767,12 +940,11 @@ var PT = (function () {
   function parseTitle(title) {
     var trimmed = collapseSpace(title).replace(/[.。]+$/g, '').trim();
     if (!trimmed) return { display: '', key: '', explicit: false };
-    var m = trimmed.match(/^(.*?)(?:\s*[-–—|:]\s*|\s+)pt$/i);
-    if (m && collapseSpace(m[1])) {
-      var display = collapseSpace(m[1]);
-      return { display: display, key: normName(display), explicit: true };
-    }
-    return { display: trimmed, key: normName(trimmed), explicit: false };
+    if (!/\bpt\b/i.test(trimmed)) return { display: trimmed, key: normName(trimmed), explicit: false };
+    var display = collapseSpace(trimmed.replace(/\bpt\b/ig, ' ')).replace(/^[-–—|:,]+|[-–—|:,]+$/g, '').trim();
+    display = collapseSpace(display);
+    if (!display) return { display: '', key: '', explicit: true };
+    return { display: display, key: normName(display), explicit: true };
   }
   function looksLikeClientName(display) {
     var s = collapseSpace(display);
@@ -860,6 +1032,7 @@ var PT = (function () {
   }
   function applySync(prevSessions, events, ctx) {
     ctx = ctx || {};
+    var clients = (ctx.clients || []).slice();
     var byId = {}, i, list = prevSessions || [];
     for (i = 0; i < list.length; i++) {
       if (!list[i] || !list[i].eventId) continue;
@@ -879,7 +1052,7 @@ var PT = (function () {
       seen[id] = true;
       var parsed = parseTitle(ev.title);
       if (!parsed.key || parsed.key === 'pt' || parsed.key.length < 2) continue;
-      if (isBuiltinIgnore(parsed.key)) continue;
+      if (!parsed.explicit && isBuiltinIgnore(parsed.key)) continue;
       var prev = byId[id];
       if (isIgnoredName(ctx.ignored, parsed.key)) {
         if (prev) {
@@ -891,12 +1064,25 @@ var PT = (function () {
         }
         continue;
       }
-      var hits = clientsForName(ctx.clients, parsed.display);
+      var hits = clientsForName(clients, parsed.display);
       var explicit = parsed.explicit;
       var nameLike = looksLikeClientName(parsed.display) && !isStoplist(parsed.key);
-      if (!explicit && hits.length === 0 && !nameLike) continue;
-      if (!explicit && isStoplist(parsed.key) && hits.length === 0) continue;
-      var disposition = hits.length === 1 ? 'kept' : 'pending';
+      var disposition = 'pending';
+      if (explicit) {
+        if (hits.length > 1) disposition = 'pending';
+        else {
+          if (!hits.length) {
+            var made = blankAutoClient(parsed.display, ctx.today || '');
+            clients = clients.concat([made]);
+            hits = [made];
+          }
+          disposition = 'kept';
+        }
+      } else {
+        if (hits.length === 0 && !nameLike) continue;
+        if (hits.length === 0 && isStoplist(parsed.key)) continue;
+        disposition = hits.length === 1 ? 'kept' : 'pending';
+      }
       if (!prev) {
         var row = blankSession(ev, parsed, ctx.nowStamp || '');
         row.disposition = disposition;
@@ -931,7 +1117,7 @@ var PT = (function () {
     for (i = 0; i < ids.length; i++) sessions.push(byId[ids[i]]);
     sessions.sort(compareSessions);
     added.sort(compareSessions);
-    return { sessions: sessions, added: added };
+    return { sessions: sessions, added: added, clients: clients };
   }
   function summaryAdded(sessions, today) {
     var cutoff = addDaysYmd(today, -1);
@@ -962,7 +1148,7 @@ var PT = (function () {
     var out = [], list = clients || [], i, stats;
     for (i = 0; i < list.length; i++) {
       stats = currentRemaining(list[i], sessions, list);
-      if (!(stats.low || stats.out)) continue;
+      if (!stats.ready || !(stats.low || stats.out)) continue;
       out.push({ name: list[i].name, remaining: stats.remaining, out: stats.out, low: stats.low });
     }
     out.sort(function (a, b) { return a.remaining - b.remaining; });
@@ -1017,6 +1203,7 @@ var PT = (function () {
     lines.push('PT Planner daily sync');
     lines.push('Status: ' + (report.ok === false ? 'failed' : 'ok'));
     lines.push('When: ' + (report.when || ''));
+    if (report.period) lines.push('Period: ' + report.period);
     lines.push('');
     if (report.ok === false) {
       lines.push('The automatic check did not finish.');
@@ -1051,9 +1238,11 @@ var PT = (function () {
     state = state || {};
     var sessions = state.sessions || [];
     var clients = state.clients || [];
+    var period = activePeriod((state.settings && state.settings.periods) || [], today);
     return buildDailyEmail({
       ok: true,
       when: whenLabel || (today + ' Asia/Dubai'),
+      period: period ? (period.start + ' to ' + period.end) : '',
       added: summaryAdded(sessions, today),
       olderSaved: olderSavedToday(sessions, today),
       low: lowClients(clients, sessions),
@@ -1194,6 +1383,13 @@ var PT = (function () {
     mondayOf: mondayOf,
     uid: uid,
     inPeriod: inPeriod,
+    sortPeriods: sortPeriods,
+    activePeriod: activePeriod,
+    savePeriods: savePeriods,
+    saveClientPackage: saveClientPackage,
+    moneyDue: moneyDue,
+    clientsWhoOwe: clientsWhoOwe,
+    packageReady: packageReady,
     getTier: getTier,
     getTierLabel: getTierLabel,
     migrateClient: migrateClient,
@@ -1294,23 +1490,27 @@ var PT = (function () {
     var sign = v < 0 ? '-' : '';
     return 'AED ' + sign + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  function monthPeriod(offset) {
-    var p = String(state.today).split('-');
-    var dt = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1 + (offset || 0), 1));
-    var start = dt.toISOString().slice(0, 10);
-    var end = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
-    var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    return { start: start, end: end, label: months[dt.getUTCMonth()] + ' ' + dt.getUTCFullYear() };
+  function periodList() {
+    return PT.sortPeriods((state.settings && state.settings.periods) || []);
   }
-  function homePeriod() {
-    var s = state.settings || {};
-    if (s.periodStart && s.periodEnd) return { start: s.periodStart, end: s.periodEnd, custom: true, label: prettyDate(s.periodStart) + ' – ' + prettyDate(s.periodEnd) };
-    return Object.assign(monthPeriod(0), { custom: false });
+  function viewedPeriod() {
+    var list = periodList(), i;
+    if (ui.periodId) {
+      for (i = 0; i < list.length; i++) if (String(list[i].id) === String(ui.periodId)) return list[i];
+    }
+    return PT.activePeriod(list, state.today);
   }
-  function viewPeriod() {
-    var s = state.settings || {};
-    if (s.periodStart && s.periodEnd) return { start: s.periodStart, end: s.periodEnd, custom: true, label: prettyDate(s.periodStart) + ' – ' + prettyDate(s.periodEnd) };
-    return Object.assign(monthPeriod(ui.monthOffset || 0), { custom: false });
+  function periodBar() {
+    var list = periodList();
+    var current = viewedPeriod();
+    if (!current) {
+      return '<div class="card"><div class="name">Set this pay period</div><p class="meta">J Club does not use calendar months. A period might run 30 Sep to 28 Oct, then 29 Oct to 29 Nov.</p><label>Starts</label><input data-field="pstart" type="date"><label>Ends</label><input data-field="pend" type="date"><button type="button" class="primary" data-act="save-period">Save period</button></div>';
+    }
+    var idx = 0, i;
+    for (i = 0; i < list.length; i++) if (list[i].id === current.id) idx = i;
+    var prev = idx > 0 ? list[idx - 1].id : '';
+    var next = idx < list.length - 1 ? list[idx + 1].id : '';
+    return '<div class="weekbar"><button type="button" class="ghost small" data-act="pick-period" data-id="' + esc(prev) + '"' + (prev ? '' : ' disabled') + '>Previous</button><b>' + esc(prettyDate(current.start) + ' – ' + prettyDate(current.end)) + '</b><button type="button" class="ghost small" data-act="pick-period" data-id="' + esc(next) + '"' + (next ? '' : ' disabled') + '>Next</button></div><div class="pair" style="margin-top:8px"><button type="button" class="ghost" data-act="edit-period" data-id="' + esc(current.id) + '">Edit these dates</button><button type="button" class="ghost" data-act="new-period">Next period</button></div>';
   }
   function route() {
     var h = (location.hash || '#home').replace(/^#/, '');
@@ -1363,22 +1563,22 @@ var PT = (function () {
   }
   function clientButton(c) {
     var st = PT.currentRemaining(c, state.sessions, state.clients);
-    var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
-    var badge = st.out ? '<span class="pill out">Out</span>' : (st.low ? '<span class="pill low">Low</span>' : '');
+    var klass = !st.ready ? 'ok' : (st.out ? 'out' : (st.low ? 'low' : 'ok'));
+    var badge = !st.ready ? '<span class="pill low">Set</span>' : (st.out ? '<span class="pill out">Out</span>' : (st.low ? '<span class="pill low">Low</span>' : ''));
     var pct = st.total > 0 ? Math.max(0, Math.min(100, Math.round((st.used / st.total) * 100))) : (st.out ? 100 : 0);
-    var period = homePeriod();
-    var monthCount = PT.periodBillable([c], state.sessions, period, state.today).length;
+    var period = viewedPeriod();
+    var monthCount = period ? PT.periodBillable([c], state.sessions, period, state.today).length : 0;
     return '<button type="button" class="client ' + klass + '" data-act="open-client" data-id="' + esc(c.id) + '">' +
       '<div class="client-top"><div class="name">' + esc(c.name) + '</div><div>' + badge + '</div></div>' +
       '<div class="bar"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="spread"><span class="left ' + klass + '">' + st.remaining + ' left</span><span class="meta">' + st.used + ' of ' + st.total + ' used</span></div>' +
-      '<div class="spread" style="margin-top:6px"><span class="meta">' + monthCount + ' this month</span><span class="meta">' + esc(money(st.remainingValue)) + ' left</span></div></button>';
+      '<div class="spread"><span class="left ' + klass + '">' + (st.ready ? (st.remaining + ' left') : 'Set package') + '</span><span class="meta">' + (st.ready ? (st.used + ' of ' + st.total + ' used') : 'From the calendar') + '</span></div>' +
+      '<div class="spread" style="margin-top:6px"><span class="meta">' + monthCount + ' this period</span><span class="meta">' + (st.ready ? esc(money(st.remainingValue)) + ' left' : 'Set package') + '</span></div></button>';
   }
 
   function shell(title, body, back) {
     var top = EXAMPLE ? '<div class="example">Example data. These are not real clients.</div>' : '';
     var head = '<header class="top"><div>' +
-      (back ? '<button type="button" class="back" data-act="nav" data-go="' + esc(back) + '">Back</button>' : '<div class="brand">PT <span>Planner</span></div><div class="sub">' + esc(title || '') + '</div>') +
+      (back ? '<button type="button" class="back" data-act="nav" data-go="' + esc(back) + '">Back</button>' : '<div class="brand"><span class="mark">PT</span> Planner</div><div class="sub">' + esc(title || '') + '</div>') +
       '</div>' +
       (back ? '' : '<button type="button" class="icon-btn" data-act="nav" data-go="#settings" aria-label="Settings">' + icon('gear') + '</button>') +
       '</header>';
@@ -1413,21 +1613,47 @@ var PT = (function () {
     var unmatched = PT.unmatchedFromSessions(state.sessions, state.clients);
     var attention = (state.clients || []).filter(function (c) {
       var st = PT.currentRemaining(c, state.sessions, state.clients);
-      return st.low || st.out;
+      return st.ready && (st.low || st.out);
     });
-    var body = '<p class="sub" style="margin:0 0 12px">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
+    var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients).ready; });
+    var owes = PT.clientsWhoOwe(state.clients);
+    var period = viewedPeriod();
+    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
+    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
+    var due = owes.reduce(function (sum, row) { return sum + row.due; }, 0);
+    var est = PT.commissionEstimate({
+      sessionRevenue: earned,
+      chargeTotal: period ? PT.periodChargeTotal(state.charges, period, state.today) : 0,
+      sessionCount: billable.length,
+      comm: state.settings
+    });
+    var body = periodBar();
+    body += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
+    body += '<div class="stats"><div><span>Expected</span><b>' + esc(money(earned)) + '</b></div><div><span>To collect</span><b>' + esc(money(due)) + '</b></div><div><span>Commission</span><b>' + (state.settings.showCommission === false ? 'Off' : esc(money(Math.round(est.commission)))) + '</b></div></div>';
     body += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
     if (unmatched.length) {
-      body += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Match them to a client, or ignore them</div></div></button>';
+      body += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Only names without PT. PT names are added for you.</div></div></button>';
     }
     body += '<h2>Today</h2>';
-    if (!todays.length) body += '<div class="card empty">No sessions today.</div>';
+    if (!todays.length) body += '<div class="card empty">Nothing on the calendar today.</div>';
     todays.forEach(function (s) { body += sessionButton(s); });
-    body += '<h2>Packages' + (attention.length ? ' · ' + attention.length + ' low or out' : '') + '</h2>';
+    if (owes.length) {
+      body += '<h2>Owes money</h2>';
+      owes.forEach(function (row) {
+        body += '<button type="button" class="row" data-act="open-client" data-id="' + esc(row.id) + '"><div class="grow"><div class="name">' + esc(row.name) + '</div><div class="note">' + (row.status === 'part' ? 'Part paid' : 'Unpaid') + '</div></div><b>' + esc(money(row.due)) + '</b></button>';
+      });
+    }
+    if (attention.length) body += '<h2>Low or out</h2>';
+    attention.forEach(function (c) { body += clientButton(c); });
+    if (needs.length) {
+      body += '<h2>Set a package</h2>';
+      needs.forEach(function (c) { body += clientButton(c); });
+    }
+    body += '<h2>Packages</h2>';
     var rest = (state.clients || []).slice().sort(function (a, b) {
       return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
     });
-    if (!rest.length) body += '<div class="card empty">Add a client when you are ready. Sessions from the calendar can wait until the name is matched.</div>';
+    if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title contains PT.</div>';
     rest.forEach(function (c) { body += clientButton(c); });
     return shell(longDate(today), body, '');
   }
@@ -1467,10 +1693,10 @@ var PT = (function () {
     var st = PT.currentRemaining(c, state.sessions, state.clients);
     var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
     var body = '<div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
-      '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + st.remaining + '<small>left</small></div>' +
-      '<p class="meta" style="margin-top:8px">' + st.used + ' of ' + st.total + ' used · ' + esc(money(st.remainingValue)) + ' left</p>' +
-      '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Package</span></div><div class="stat"><b>' + esc(money(st.perSession)) + '</b><span>Per session</span></div></div>' +
-      '<p class="meta">Started ' + esc(c.startDate ? prettyDate(c.startDate) : 'whenever you say') + '</p>' +
+      '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (!st.ready ? 'var(--ink)' : st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + (st.ready ? (st.remaining + '<small>left</small>') : '<small style="font-size:28px">Set the package</small>') + '</div>' +
+      '<p class="meta" style="margin-top:8px">' + (st.ready ? (st.used + ' of ' + st.total + ' used · ' + money(st.remainingValue) + ' left') : 'Add the package size and what is left.') + '</p>' +
+      '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Price</span></div><div class="stat"><b>' + esc(money(st.due)) + '</b><span>' + (st.paymentStatus === 'paid' ? 'Paid' : st.paymentStatus === 'part' ? 'Still due' : 'Unpaid') + '</span></div></div>' +
+      '<p class="meta">Counts from ' + esc(st.startDate ? prettyDate(st.startDate) : 'the start date') + (st.expiry ? ' · until ' + esc(prettyDate(st.expiry)) : '') + (st.note ? ' · ' + esc(st.note) : '') + '</p>' +
       '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div>';
     var packages = PT.sortPackages(c.packages || []);
     if (packages.length > 1) {
@@ -1500,27 +1726,23 @@ var PT = (function () {
     return '<div class="card"><div class="spread"><b>' + esc(c ? c.name : 'Client') + '</b><b>' + esc(money(ch.amount)) + '</b></div>' +
       '<div class="meta" style="margin-top:4px">' + esc(chargeLabel(ch.type)) + ' · ' + esc(prettyDate(ch.date)) + '</div>' +
       (ch.notes ? '<div class="note">' + esc(ch.notes) + '</div>' : '') +
-      '<button type="button" class="ghost small" data-act="delete-charge" data-id="' + esc(ch.id) + '" style="margin-top:8px">Remove</button></div>';
+      '<div class="pair" style="margin-top:8px"><button type="button" class="ghost small" data-act="edit-charge" data-id="' + esc(ch.id) + '">Edit</button><button type="button" class="ghost small" data-act="delete-charge" data-id="' + esc(ch.id) + '">Remove</button></div></div>';
   }
 
   function reportScreen() {
-    var period = viewPeriod();
-    var billable = PT.periodBillable(state.clients, state.sessions, period, state.today);
-    var revenue = PT.periodSessionRevenue(state.clients, state.sessions, period, state.today);
-    var chargeTotal = PT.periodChargeTotal(state.charges, period, state.today);
+    var period = viewedPeriod();
+    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
+    var revenue = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
+    var chargeTotal = period ? PT.periodChargeTotal(state.charges, period, state.today) : 0;
     var est = PT.commissionEstimate({
       sessionRevenue: revenue,
       chargeTotal: chargeTotal,
       sessionCount: billable.length,
       comm: state.settings
     });
-    var body = '';
-    if (period.custom) {
-      body += '<div class="banner">Using your dates: ' + esc(period.label) + '</div>';
-    } else {
-      body += '<div class="weekbar"><button type="button" class="ghost small" data-act="month" data-id="-1">Previous</button><b>' + esc(period.label) + '</b><button type="button" class="ghost small" data-act="month" data-id="1">Next</button></div>';
-    }
-    body += '<div class="card" style="margin-top:12px"><div class="meta">Sessions counted</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + billable.length + '</div><p class="meta">Free sessions are not counted. ' + esc(money(revenue)) + ' of package value.</p></div>';
+    var body = periodBar();
+    if (!period) return shell('Report', body + '<div class="card empty">Set the pay period and the report will use those dates.</div>', '');
+    body += '<div class="card" style="margin-top:12px"><div class="meta">Sessions this period</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + billable.length + '</div><p class="meta">Free sessions are not counted. ' + esc(money(revenue)) + ' expected from packages. Charges ' + esc(money(chargeTotal)) + '.</p></div>';
     if (state.settings.showCommission !== false) {
       body += '<div class="card"><div class="spread"><div class="meta">Commission estimate</div><button type="button" class="ghost small" data-act="nav" data-go="#settings">Settings</button></div>' +
         '<div class="hero-num" style="font-size:40px;color:var(--green);margin:8px 0">' + esc(moneyExact(est.commission)) + '</div>' +
@@ -1546,18 +1768,21 @@ var PT = (function () {
   }
 
   function chargesScreen() {
-    var total = PT.chargeTotalFor(state.charges);
-    var body = '<div class="card"><div class="meta">All charges</div><div class="hero-num" style="font-size:42px;margin-top:6px">' + esc(money(total)) + '</div></div>';
+    var period = viewedPeriod();
+    var list = (state.charges || []).filter(function (ch) { return period && PT.inPeriod(ch.date, period); }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var total = list.reduce(function (sum, ch) { return sum + PT.chargeAmount(ch); }, 0);
+    var body = periodBar();
+    body += '<div class="card" style="margin-top:12px"><div class="meta">Charges this period</div><div class="hero-num" style="font-size:42px;margin-top:6px">' + esc(money(total)) + '</div></div>';
     body += '<button type="button" class="primary" data-act="add-charge">Add a charge</button>';
-    var list = (state.charges || []).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    if (!list.length) body += '<div class="card empty">No charges yet.</div>';
+    if (!period) body += '<div class="card empty">Set the pay period first.</div>';
+    else if (!list.length) body += '<div class="card empty">No charges in this period.</div>';
     list.forEach(function (ch) { body += chargeRow(ch); });
     return shell('Charges', body, '#report');
   }
 
   function reviewScreen() {
     var items = PT.unmatchedFromSessions(state.sessions, state.clients);
-    var body = '<p class="meta">These names came from the calendar. Match each one once. New sessions with that name will follow.</p>';
+    var body = '<p class="meta">These titles do not contain PT. A title with PT, such as Omar PT, is added as a client on its own.</p>';
     if (!items.length) body += '<div class="card empty">Every calendar name is matched.</div>';
     items.forEach(function (item) {
       var options = '<option value="">Choose a client</option>' + (state.clients || []).map(function (c) {
@@ -1582,18 +1807,12 @@ var PT = (function () {
     var s = state.settings || {};
     var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div><div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on the report</label>' +
       '<label class="check"><input data-field="includeCharges" type="checkbox"' + (s.includeCharges ? ' checked' : '') + '> Add AED charges into the commission</label>' +
-      '<label>Monthly quota (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(s.quota || '7758') + '">' +
+      '<label>Quota for a pay period (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(s.quota || '7758') + '">' +
       '<label>Net factor (%)</label><input data-field="netFactor" inputmode="decimal" value="' + esc(s.netFactor || '81.63') + '">' +
-      '<p class="meta">Up to 80 sessions 45% · 81–100 is 60% · 101–119 is 65% · 120+ is 70%. Free sessions are not counted.</p>' +
-      '<label>Report start, if you do not want the calendar month</label><input data-field="periodStart" type="date" value="' + esc(s.periodStart || '') + '">' +
-      '<label>Report end</label><input data-field="periodEnd" type="date" value="' + esc(s.periodEnd || '') + '">' +
+      '<p class="meta">The quota is for the pay period you select, not a calendar month. Up to 80 sessions 45% · 81–100 is 60% · 101–119 is 65% · 120+ is 70%. Free sessions are not counted.</p>' +
       '<button type="button" class="primary" data-act="save-settings">Save</button></div>';
     body += '<div class="card"><b>Morning email</b><p class="meta">Every day around 5:00 (Dubai time) the planner checks the calendar and emails pedrocerdeira81@gmail.com. The subject is exactly “PT Planner daily sync”.</p>' +
       '<button type="button" class="ghost" data-act="email">Email today’s summary</button></div>';
-    var migrate = state.webAppUrl ? ('https://pedrocerdeira81-coder.github.io/Pt-planner/migrate.html?app=' + encodeURIComponent(state.webAppUrl)) : '';
-    body += '<div class="card"><b>Clients from the old planner</b><p class="meta">This copies names and packages once. It does not copy sessions, so the calendar will not count them twice.</p>' +
-      (migrate ? '<a href="' + esc(migrate) + '">Bring over old clients</a>' : '<p class="meta">The link appears here after you open the planner from the Google link.</p>') +
-      '</div>';
     body += '<div class="card"><b>Home screen</b><ol class="steps"><li>Open this planner in Safari.</li><li>Tap the Share button (the square with the arrow).</li><li>Tap Add to Home Screen.</li><li>Leave the name as PT Planner. If you see Open as Web App, leave it on.</li><li>Tap Add, then tap the new icon.</li></ol></div>';
     if ((state.ignored || []).length) {
       body += '<h2>Ignored names</h2>';
@@ -1621,14 +1840,44 @@ var PT = (function () {
     render();
   }
 
+  function payFields(pkg, left) {
+    var status = pkg && pkg.paymentStatus ? pkg.paymentStatus : 'unpaid';
+    var method = pkg && pkg.method ? pkg.method : '';
+    function opt(value, label, current) { return '<option value="' + value + '"' + (current === value ? ' selected' : '') + '>' + label + '</option>'; }
+    return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg && pkg.sessions ? pkg.sessions : '') + '">' +
+      '<label>Sessions left</label><input data-field="sessionsLeft" inputmode="numeric" value="' + esc(left) + '">' +
+      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg && pkg.value ? pkg.value : '') + '">' +
+      '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
+      '<label>Expires, if it does</label><input data-field="expiry" type="date" value="' + esc(pkg && pkg.expiry ? pkg.expiry : '') + '">' +
+      '<label>Payment</label><select data-field="paymentStatus">' + opt('unpaid', 'Unpaid', status) + opt('part', 'Part paid', status) + opt('paid', 'Paid', status) + '</select>' +
+      '<label>Amount received (AED)</label><input data-field="amountReceived" inputmode="decimal" value="' + esc(pkg && pkg.amountReceived ? pkg.amountReceived : '') + '">' +
+      '<label>How he paid</label><select data-field="method">' + opt('', 'Not yet', method) + opt('cash', 'Cash', method) + opt('card', 'Card', method) + opt('transfer', 'Bank transfer', method) + '</select>' +
+      '<label>Payment date</label><input data-field="paymentDate" type="date" value="' + esc(pkg && pkg.paymentDate ? pkg.paymentDate : '') + '">' +
+      '<label>Notes</label><input data-field="note" value="' + esc(pkg && pkg.note ? pkg.note : '') + '">';
+  }
+  function readPackage(root) {
+    return {
+      name: field('name', root),
+      sessions: field('sessions', root),
+      sessionsLeft: field('sessionsLeft', root),
+      value: field('value', root),
+      startDate: field('start', root),
+      expiry: field('expiry', root),
+      paymentStatus: field('paymentStatus', root),
+      amountReceived: field('amountReceived', root),
+      method: field('method', root),
+      paymentDate: field('paymentDate', root),
+      note: field('note', root)
+    };
+  }
   function openClientForm(c) {
     ui.error = '';
     var pkg = c ? PT.currentPackage(c.packages) : null;
-    ui.sheet = '<div class="name">' + (c ? 'Fix package' : 'New client') + '</div>' +
+    var st = c ? PT.currentRemaining(c, state.sessions, state.clients) : null;
+    var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored, so an old calendar does not use up a fresh package.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
-      '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg ? pkg.sessions : '') + '">' +
-      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg ? pkg.value : '') + '">' +
-      '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
+      payFields(pkg, left) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
     render();
   }
@@ -1637,33 +1886,34 @@ var PT = (function () {
     var c = clientById(id);
     if (!c) return;
     ui.error = '';
-    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Sessions on or after the new start date use the new package.</p>' +
-      '<label>Sessions</label><input data-field="sessions" inputmode="numeric" placeholder="12">' +
-      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" placeholder="4800">' +
-      '<label>Starts</label><input data-field="start" type="date" value="' + esc(state.today) + '">' +
+    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Only sessions on or after the new start date count.</p>' +
+      payFields(null, '') +
       '<button type="button" class="primary" data-act="save-renew" data-id="' + esc(c.id) + '">Save renewal</button>';
     render();
   }
 
-  function openCharge(clientId, eventId, date) {
+  function openCharge(clientId, eventId, date, existing) {
     ui.error = '';
+    existing = existing || {};
+    var type = existing.type || 'late_cancel';
     var options = '<option value="">Choose a client</option>' + (state.clients || []).map(function (c) {
       return '<option value="' + esc(c.id) + '"' + (String(c.id) === String(clientId) ? ' selected' : '') + '>' + esc(c.name) + '</option>';
     }).join('');
+    function opt(value, label) { return '<option value="' + value + '"' + (type === value ? ' selected' : '') + '>' + label + '</option>'; }
     ui.sheet = '<div class="name">AED charge</div>' +
       '<label>Client</label><select data-field="clientId">' + options + '</select>' +
-      '<label>Amount (AED)</label><input data-field="amount" inputmode="decimal" placeholder="200">' +
-      '<label>Type</label><select data-field="type"><option value="late_cancel">Late cancel</option><option value="no_show">No show</option><option value="other">Other</option></select>' +
+      '<label>Amount (AED)</label><input data-field="amount" inputmode="decimal" value="' + esc(existing.amount != null ? existing.amount : '') + '" placeholder="200">' +
+      '<label>Type</label><select data-field="type">' + opt('late_cancel', 'Late cancel') + opt('no_show', 'No show') + opt('other', 'Other') + '</select>' +
       '<label>Date</label><input data-field="date" type="date" value="' + esc(date || state.today) + '">' +
-      '<label>Note</label><input data-field="notes" placeholder="Optional">' +
-      '<button type="button" class="primary" data-act="save-charge" data-event="' + esc(eventId || '') + '">Save charge</button>';
+      '<label>Note</label><input data-field="notes" value="' + esc(existing.notes || '') + '" placeholder="Optional">' +
+      '<button type="button" class="primary" data-act="save-charge" data-id="' + esc(existing.id || '') + '" data-event="' + esc(eventId || '') + '">Save charge</button>';
     render();
   }
 
   function openDelete(id) {
     var c = clientById(id);
     if (!c) return;
-    ui.sheet = '<div class="name">Remove ' + esc(c.name) + '?</div><p class="meta">Their calendar sessions stay, but they will need a name match again. Charges for them are removed.</p>' +
+    ui.sheet = '<div class="name">Remove ' + esc(c.name) + '?</div><p class="meta">The calendar will stop adding this name. Charges for them are removed.</p>' +
       '<button type="button" class="danger" data-act="delete-client" data-id="' + esc(id) + '">Remove</button>' +
       '<button type="button" class="ghost" data-act="close">Keep</button>';
     render();
@@ -1714,17 +1964,16 @@ var PT = (function () {
         state.sessions = linked.sessions;
       }
     } else if (name === 'apiSaveClient') {
-      if (!a.id) state.clients = PT.createClient(state.clients, a);
-      else if (a.mode === 'renew') {
-        state.clients = state.clients.map(function (c) { return String(c.id) === String(a.id) ? PT.renewPackage(c, a) : c; });
-      } else {
+      if (!a.id) state.clients = PT.createClient(state.clients, a, state.sessions, state.clients);
+      else {
         state.clients = state.clients.map(function (c) {
-          if (String(c.id) !== String(a.id)) return c;
-          var next = PT.updateCurrentPackage(c, a);
-          if (a.name && PT.normName(a.name) !== PT.normName(next.name)) next = PT.renameClient([next], a.id, a.name)[0];
-          return next;
+          return String(c.id) === String(a.id) ? PT.saveClientPackage(c, a, state.sessions, state.clients) : c;
         });
       }
+    } else if (name === 'apiSavePeriods') {
+      var savedPeriods = PT.savePeriods((state.settings && state.settings.periods) || [], a);
+      state.settings.periods = savedPeriods.periods;
+      ui.periodId = savedPeriods.id;
     } else if (name === 'apiDeleteClient') {
       var removed = PT.deleteClient(state.clients, state.sessions, a.id);
       state.clients = removed.clients;
@@ -1735,8 +1984,8 @@ var PT = (function () {
       var amount = Number(a.amount);
       if (!isFinite(amount) || amount < 0) throw new Error('Enter an amount in AED, or 0.');
       if (!a.clientId) throw new Error('Choose a client.');
-      state.charges = (state.charges || []).concat([PT.migrateCharge({
-        id: 'ch' + Date.now(),
+      var entry = PT.migrateCharge({
+        id: a.id || ('ch' + Date.now()),
         clientId: a.clientId,
         eventId: a.eventId || '',
         type: a.type || 'other',
@@ -1744,15 +1993,18 @@ var PT = (function () {
         date: a.date || state.today,
         notes: a.notes || '',
         createdAt: state.today
-      })]);
+      });
+      var replaced = false;
+      state.charges = (state.charges || []).map(function (ch) {
+        if (a.id && String(ch.id) === String(a.id)) { replaced = true; return entry; }
+        return ch;
+      });
+      if (!replaced) state.charges = state.charges.concat([entry]);
     } else if (name === 'apiDeleteCharge') {
       state.charges = (state.charges || []).filter(function (ch) { return String(ch.id) !== String(a.id); });
     } else if (name === 'apiSaveSettings') {
-      if ((a.periodStart && !a.periodEnd) || (!a.periodStart && a.periodEnd)) throw new Error('Enter both dates, or clear both.');
-      if (a.periodStart && a.periodEnd && a.periodEnd < a.periodStart) throw new Error('The end date is before the start date.');
       var comm = PT.normalizeComm(a);
-      comm.periodStart = a.periodStart || '';
-      comm.periodEnd = a.periodEnd || '';
+      comm.periods = (state.settings && state.settings.periods) || [];
       state.settings = comm;
     } else if (name === 'apiUnignore') {
       var key = PT.normName(a.name);
@@ -1813,7 +2065,28 @@ var PT = (function () {
       return;
     }
     if (act === 'week') { ui.weekOffset = (ui.weekOffset || 0) + Number(el.getAttribute('data-id') || 0); render(); return; }
-    if (act === 'month') { ui.monthOffset = (ui.monthOffset || 0) + Number(el.getAttribute('data-id') || 0); render(); return; }
+    if (act === 'pick-period') {
+      var pick = el.getAttribute('data-id');
+      if (!pick) return;
+      ui.periodId = pick;
+      render();
+      return;
+    }
+    if (act === 'edit-period' || act === 'new-period') {
+      var chosen = null;
+      if (act === 'edit-period') {
+        periodList().forEach(function (p) { if (String(p.id) === String(el.getAttribute('data-id'))) chosen = p; });
+      }
+      ui.error = '';
+      ui.sheet = '<div class="name">' + (act === 'new-period' ? 'Next pay period' : 'Edit pay period') + '</div><p class="meta">Use the exact dates from J Club. Totals update as soon as you save.</p><label>Starts</label><input data-field="pstart" type="date" value="' + esc(chosen ? chosen.start : '') + '"><label>Ends</label><input data-field="pend" type="date" value="' + esc(chosen ? chosen.end : '') + '"><button type="button" class="primary" data-act="save-period" data-id="' + esc(chosen ? chosen.id : '') + '">Save</button>';
+      render();
+      return;
+    }
+    if (act === 'save-period') {
+      var holder = el.closest('.sheet') || el.closest('.card') || document;
+      go('apiSavePeriods', [{ id: el.getAttribute('data-id') || '', start: field('pstart', holder), end: field('pend', holder) }]);
+      return;
+    }
     if (act === 'session') { openSession(el.getAttribute('data-id')); return; }
     if (act === 'open-client') { location.hash = '#client/' + encodeURIComponent(el.getAttribute('data-id')); return; }
     if (act === 'sync') { go('apiSyncNow', [{}]); return; }
@@ -1825,25 +2098,29 @@ var PT = (function () {
     if (act === 'renew') { openRenew(el.getAttribute('data-id')); return; }
     if (act === 'save-client' || act === 'save-renew') {
       var root = el.closest('.sheet');
-      go('apiSaveClient', [{
-        id: el.getAttribute('data-id'),
-        mode: act === 'save-renew' ? 'renew' : 'edit',
-        name: field('name', root),
-        sessions: field('sessions', root),
-        value: field('value', root),
-        startDate: field('start', root)
-      }]);
+      var pack = readPackage(root);
+      pack.id = el.getAttribute('data-id');
+      pack.mode = act === 'save-renew' ? 'renew' : 'edit';
+      go('apiSaveClient', [pack]);
       return;
     }
     if (act === 'ask-delete') { openDelete(el.getAttribute('data-id')); return; }
     if (act === 'delete-client') { go('apiDeleteClient', [{ id: el.getAttribute('data-id') }]); return; }
     if (act === 'add-charge') { ui.sheet = null; openCharge(el.getAttribute('data-id'), el.getAttribute('data-event'), el.getAttribute('data-date')); return; }
+    if (act === 'edit-charge') {
+      var existing = null;
+      (state.charges || []).forEach(function (ch) { if (String(ch.id) === String(el.getAttribute('data-id'))) existing = ch; });
+      if (!existing) return;
+      openCharge(existing.clientId, existing.eventId, existing.date, existing);
+      return;
+    }
     if (act === 'save-charge') {
       var box = el.closest('.sheet');
       go('apiSaveCharge', [{
+        id: el.getAttribute('data-id') || '',
         clientId: field('clientId', box),
         amount: field('amount', box),
-        type: field('type', box),
+        type: field('type', box) || 'other',
         date: field('date', box),
         notes: field('notes', box),
         eventId: el.getAttribute('data-event') || ''
@@ -1875,9 +2152,7 @@ var PT = (function () {
         showCommission: field('showCommission'),
         includeCharges: field('includeCharges'),
         quota: field('quota'),
-        netFactor: field('netFactor'),
-        periodStart: field('periodStart'),
-        periodEnd: field('periodEnd')
+        netFactor: field('netFactor')
       }]);
       return;
     }
@@ -1937,9 +2212,15 @@ var PT = (function () {
         };
       });
     }
+    function pay(client, extra) {
+      var pkgs = client.packages.slice();
+      pkgs[pkgs.length - 1] = Object.assign({}, pkgs[pkgs.length - 1], extra);
+      client.packages = pkgs;
+      return client;
+    }
     var clients = [
-      PT.migrateClient({ id: 'larissa', name: 'Larissa', packageSessions: '20', packageValue: '7000', startDate: '2026-09-01' }),
-      PT.migrateClient({ id: 'jeremy', name: 'Jeremy', packageSessions: '12', packageValue: '4800', startDate: '2026-08-01' }),
+      pay(PT.migrateClient({ id: 'larissa', name: 'Larissa', packageSessions: '20', packageValue: '7000', startDate: '2026-09-01' }), { paymentStatus: 'paid', amountReceived: '7000', method: 'transfer', paymentDate: '2026-09-01' }),
+      pay(PT.migrateClient({ id: 'jeremy', name: 'Jeremy', packageSessions: '12', packageValue: '4800', startDate: '2026-08-01' }), { paymentStatus: 'part', amountReceived: '2000', method: 'card', paymentDate: '2026-08-02' }),
       PT.migrateClient({
         id: 'mohammad',
         name: 'Mohammad family',
@@ -1948,7 +2229,8 @@ var PT = (function () {
           { id: 'm-now', sessions: '10', value: '5500', startDate: '2026-06-01' }
         ]
       }),
-      PT.migrateClient({ id: 'sofia', name: 'Sofia', packageSessions: '16', packageValue: '6400', startDate: '2026-10-01' })
+      pay(PT.migrateClient({ id: 'sofia', name: 'Sofia', packageSessions: '16', packageValue: '6400', startDate: '2026-10-01' }), { paymentStatus: 'paid', amountReceived: '6400', method: 'cash', paymentDate: '2026-10-01' }),
+      PT.migrateClient({ id: 'omar', name: 'Omar', packageSessions: '', packageValue: '', startDate: '2026-11-02', paymentStatus: 'unpaid' })
     ];
     var sessions = []
       .concat(many('Larissa', ['2026-09-03', '2026-09-10', '2026-09-17', '2026-10-01', '2026-10-22', '2026-11-05', '2026-11-09', '2026-11-12', '2026-11-16', '2026-11-19', '2026-11-23', '2026-11-26', '2026-11-30'], '07:00'))
@@ -1991,10 +2273,16 @@ var PT = (function () {
       clients: clients,
       sessions: sessions,
       charges: [
-        { id: 'ch1', clientId: 'jeremy', eventId: '', type: 'late_cancel', amount: 200, date: '2026-10-28', notes: 'Cancelled 1 hour before', createdAt: '2026-10-28' },
-        { id: 'ch2', clientId: 'sofia', eventId: '', type: 'no_show', amount: 150, date: '2026-10-21', notes: 'Did not arrive', createdAt: '2026-10-21' }
+        { id: 'ch1', clientId: 'jeremy', eventId: '', type: 'late_cancel', amount: 200, date: '2026-11-01', notes: 'Cancelled 1 hour before', createdAt: '2026-11-01' },
+        { id: 'ch2', clientId: 'sofia', eventId: '', type: 'no_show', amount: 150, date: '2026-10-30', notes: 'Did not arrive', createdAt: '2026-10-30' }
       ],
-      settings: { quota: '2000', netFactor: '81.63', includeCharges: false, showCommission: true, periodStart: '', periodEnd: '' },
+      settings: {
+        quota: '2000', netFactor: '81.63', includeCharges: false, showCommission: true,
+        periods: [
+          { id: 'p1', start: '2026-09-30', end: '2026-10-28' },
+          { id: 'p2', start: '2026-10-29', end: '2026-11-29' }
+        ]
+      },
       ignored: []
     };
   }
