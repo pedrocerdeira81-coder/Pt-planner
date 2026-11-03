@@ -19,7 +19,7 @@ When: 2026-11-02 05:07 Asia/Dubai
 Period: 2026-10-29 to 2026-11-29
 
 Sessions added: 1
-- Jeremy | 2026-11-02 09:00 | free | Free pra compensar outras sessoes
+- Sara | 2026-11-02 07:00 | normal
 
 Clients low or out: 1
 - Jeremy | 2 left | low
@@ -36,7 +36,7 @@ Unmatched names: 1
 - The second line is `Status: ok` or `Status: failed`.
 - `When:` is Dubai time.
 - `Period:` is the gym pay period that contains that morning, for example `2026-09-30 to 2026-10-28`. It is not a calendar month. The line is omitted if he has not saved a period yet.
-- `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
+- `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. Free sessions are left out of that count, including a title that contains the word free, such as `PT Omar free` or `Free session`. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
 - An empty section is `- None`.
 - A line is `Name | date time | normal|free|charged | note`.
 - Low means 1 or 2 sessions left. Out means 0 or fewer. Free sessions do not use up a package. Normal and charged do.

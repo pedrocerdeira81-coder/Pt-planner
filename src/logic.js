@@ -59,49 +59,94 @@ var PT = (function () {
     var date = String(d).slice(0, 10);
     return date >= String(period.start) && date <= String(period.end);
   }
-  function paymentStatusOf(v) {
-    v = String(v || '').toLowerCase();
-    if (v === 'paid') return 'paid';
-    if (v === 'part' || v === 'part-paid' || v === 'part_paid') return 'part';
-    return 'unpaid';
+  // September 2026 J Club form: net 30452.65 / revenue 37304.50.
+  // 81.63% on the form is this factor rounded. The longer figure matches the fils.
+  var DEFAULT_NET_FACTOR = String((30452.65 / 37304.50) * 100);
+  function defaultTiers() {
+    return [
+      { from: 0, rate: 45 },
+      { from: 81, rate: 60 },
+      { from: 101, rate: 65 },
+      { from: 120, rate: 70 }
+    ];
   }
-  function methodOf(v) {
-    v = String(v || '').toLowerCase();
-    if (v === 'cash' || v === 'card' || v === 'transfer') return v;
-    if (v === 'bank' || v === 'bank transfer') return 'transfer';
-    return '';
+  function roundFils(n) {
+    var x = Number(n);
+    if (!isFinite(x)) return 0;
+    return Math.round(x * 100) / 100;
   }
-  function getTier(n) {
+  function normalizeTiers(list) {
+    var source = (Array.isArray(list) && list.length) ? list : defaultTiers();
+    var map = {}, order = [], i, from, rate, key;
+    for (i = 0; i < source.length; i++) {
+      var row = source[i] || {};
+      if (row.from === '' || row.from == null || row.rate === '' || row.rate == null) continue;
+      from = Number(row.from);
+      rate = Number(row.rate);
+      if (!isFinite(from) || from < 0 || !isFinite(rate)) continue;
+      from = Math.round(from);
+      key = String(from);
+      if (!Object.prototype.hasOwnProperty.call(map, key)) order.push(from);
+      map[key] = rate;
+    }
+    if (!order.length) {
+      source = defaultTiers();
+      map = {};
+      order = [];
+      for (i = 0; i < source.length; i++) {
+        order.push(source[i].from);
+        map[String(source[i].from)] = source[i].rate;
+      }
+    }
+    order.sort(function (a, b) { return a - b; });
+    var out = [];
+    for (i = 0; i < order.length; i++) out.push({ from: order[i], rate: map[String(order[i])] });
+    return out;
+  }
+  function tierForCount(n, tiers) {
+    var table = normalizeTiers(tiers);
     n = Number(n) || 0;
-    if (n >= 120) return 0.70;
-    if (n >= 101) return 0.65;
-    if (n >= 81) return 0.60;
-    return 0.45;
+    var hit = table[0], i;
+    for (i = 0; i < table.length; i++) {
+      if (n >= table[i].from) hit = table[i];
+    }
+    return hit;
   }
-  function getTierLabel(n) {
+  function getTier(n, tiers) {
+    return (Number(tierForCount(n, tiers).rate) || 0) / 100;
+  }
+  function sessionsToNextTier(n, tiers) {
+    var table = normalizeTiers(tiers);
     n = Number(n) || 0;
-    if (n >= 120) return '120+ · 70%';
-    if (n >= 101) return '101-119 · 65%';
-    if (n >= 81) return '81-100 · 60%';
-    return 'Up to 80 · 45%';
+    var i;
+    for (i = 0; i < table.length; i++) {
+      if (table[i].from > n) return table[i].from - n;
+    }
+    return 0;
+  }
+  function getTierLabel(n, tiers) {
+    var table = normalizeTiers(tiers);
+    var hit = tierForCount(n, tiers);
+    var nextFrom = null, i;
+    for (i = 0; i < table.length; i++) {
+      if (table[i].from > hit.from) { nextFrom = table[i].from; break; }
+    }
+    var rate = String(hit.rate) + '%';
+    if (nextFrom == null) return hit.from + '+ · ' + rate;
+    if (hit.from <= 0) return 'Up to ' + (nextFrom - 1) + ' · ' + rate;
+    return hit.from + '-' + (nextFrom - 1) + ' · ' + rate;
   }
   function normalizePackage(p, fallbackId) {
     p = p || {};
     var sessions = (p.sessions != null && p.sessions !== '') ? p.sessions : p.packageSessions;
     var value = (p.value != null && p.value !== '') ? p.value : p.packageValue;
     var left = (p.sessionsLeft != null && p.sessionsLeft !== '') ? p.sessionsLeft : '';
-    var received = (p.amountReceived != null && p.amountReceived !== '') ? p.amountReceived : '';
     return {
       id: p.id ? String(p.id) : String(fallbackId || uid()),
       sessions: asAmountString(sessions),
       sessionsLeft: left === '' ? '' : String(left),
       value: asAmountString(value),
       startDate: p.startDate ? String(p.startDate).slice(0, 10) : '',
-      expiry: p.expiry ? String(p.expiry).slice(0, 10) : '',
-      paymentStatus: paymentStatusOf(p.paymentStatus),
-      amountReceived: received === '' ? '' : String(received),
-      method: methodOf(p.method),
-      paymentDate: p.paymentDate ? String(p.paymentDate).slice(0, 10) : '',
       note: p.note != null ? String(p.note) : ''
     };
   }
@@ -152,11 +197,6 @@ var PT = (function () {
         value: c.packageValue,
         startDate: c.startDate,
         sessionsLeft: c.sessionsLeft,
-        expiry: c.expiry,
-        paymentStatus: c.paymentStatus,
-        amountReceived: c.amountReceived,
-        method: c.method,
-        paymentDate: c.paymentDate,
         note: c.note
       }, id + '-pkg1'));
     }
@@ -211,9 +251,10 @@ var PT = (function () {
     c = c || {};
     return {
       quota: c.quota != null && c.quota !== '' ? String(c.quota) : '7758',
-      netFactor: c.netFactor != null && c.netFactor !== '' ? String(c.netFactor) : '81.63',
+      netFactor: c.netFactor != null && c.netFactor !== '' ? String(c.netFactor) : DEFAULT_NET_FACTOR,
       includeCharges: !!c.includeCharges,
-      showCommission: c.showCommission === false ? false : true
+      showCommission: c.showCommission === false ? false : true,
+      tiers: normalizeTiers(c.tiers)
     };
   }
   function normalizePeriod(p) {
@@ -278,7 +319,7 @@ var PT = (function () {
   }
   function resolvedNetFactor(comm) {
     var n = Number(comm && comm.netFactor);
-    if (!n) n = 81.63;
+    if (!n) n = Number(DEFAULT_NET_FACTOR);
     return n / 100;
   }
   function resolvedQuota(comm) {
@@ -413,19 +454,23 @@ var PT = (function () {
     var chargeTotal = Number(opts.chargeTotal) || 0;
     var sessionCount = Number(opts.sessionCount) || 0;
     var totalRevenue = sessionRevenue + (comm.includeCharges ? chargeTotal : 0);
-    var netRevenue = totalRevenue * resolvedNetFactor(comm);
+    var netRevenue = roundFils(totalRevenue * resolvedNetFactor(comm));
     var quota = resolvedQuota(comm);
-    var commRevenue = Math.max(0, netRevenue - quota);
+    var commRevenue = roundFils(Math.max(0, netRevenue - quota));
+    var tierRate = getTier(sessionCount, comm.tiers);
     return {
-      totalRevenue: totalRevenue,
+      totalRevenue: roundFils(totalRevenue),
       netRevenue: netRevenue,
       quota: quota,
       netFactor: resolvedNetFactor(comm) * 100,
       commRevenue: commRevenue,
-      commission: commRevenue * getTier(sessionCount),
-      tierLabel: getTierLabel(sessionCount),
+      commission: roundFils(commRevenue * tierRate),
+      tierRate: tierRate,
+      tierPercent: tierForCount(sessionCount, comm.tiers).rate,
+      tierLabel: getTierLabel(sessionCount, comm.tiers),
+      sessionsToNext: sessionsToNextTier(sessionCount, comm.tiers),
       sessionCount: sessionCount,
-      sessionRevenue: sessionRevenue,
+      sessionRevenue: roundFils(sessionRevenue),
       chargeTotal: chargeTotal,
       includeCharges: comm.includeCharges,
       showCommission: comm.showCommission
@@ -454,27 +499,6 @@ var PT = (function () {
     if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
     return Number(pkg.sessions) || 0;
   }
-  function moneyDue(client) {
-    var pkg = currentPackage(client && client.packages);
-    if (!pkg) return null;
-    var price = Number(pkg.value) || 0;
-    var got = Number(pkg.amountReceived);
-    if (!isFinite(got) || got < 0) got = 0;
-    var due = Math.max(0, price - got);
-    var status = pkg.paymentStatus || 'unpaid';
-    if (status === 'paid' || !(price > 0)) return null;
-    if (due <= 0) return null;
-    return { id: client.id, name: client.name, due: due, status: status, price: price, received: got };
-  }
-  function clientsWhoOwe(clients) {
-    var out = [], i, row;
-    for (i = 0; i < (clients || []).length; i++) {
-      row = moneyDue(clients[i]);
-      if (row) out.push(row);
-    }
-    out.sort(function (a, b) { return b.due - a.due; });
-    return out;
-  }
   function currentRemaining(client, sessions, allClients) {
     var pkg = currentPackage(client && client.packages);
     var total = pkg ? (Number(pkg.sessions) || 0) : 0;
@@ -484,8 +508,6 @@ var PT = (function () {
     var per = sessionRate(pkg);
     var ready = packageReady(pkg);
     var price = pkg ? Number(pkg.value || 0) : 0;
-    var got = pkg ? Number(pkg.amountReceived) : 0;
-    if (!isFinite(got) || got < 0) got = 0;
     return {
       used: used,
       total: total,
@@ -498,12 +520,6 @@ var PT = (function () {
       packageId: pkg ? pkg.id : '',
       value: price,
       startDate: pkg ? pkg.startDate : '',
-      expiry: pkg ? pkg.expiry : '',
-      paymentStatus: pkg ? (pkg.paymentStatus || 'unpaid') : 'unpaid',
-      amountReceived: got,
-      due: Math.max(0, price - got),
-      method: pkg ? pkg.method : '',
-      paymentDate: pkg ? pkg.paymentDate : '',
       note: pkg ? pkg.note : ''
     };
   }
@@ -580,11 +596,6 @@ var PT = (function () {
       packageValue: fields.value || 0,
       startDate: fields.startDate || '',
       sessionsLeft: '',
-      expiry: fields.expiry || '',
-      paymentStatus: fields.paymentStatus,
-      amountReceived: fields.amountReceived,
-      method: fields.method,
-      paymentDate: fields.paymentDate,
       note: fields.note || '',
       aliases: []
     });
@@ -619,7 +630,6 @@ var PT = (function () {
       packageValue: '',
       startDate: today || '',
       sessionsLeft: '',
-      paymentStatus: 'unpaid',
       aliases: []
     });
   }
@@ -640,14 +650,18 @@ var PT = (function () {
     if (!found) throw new Error('That client is not in the planner.');
     return next;
   }
+  function titleHasFree(title) {
+    return /\bfree\b/i.test(collapseSpace(title));
+  }
   function parseTitle(title) {
     var trimmed = collapseSpace(title).replace(/[.。]+$/g, '').trim();
-    if (!trimmed) return { display: '', key: '', explicit: false };
-    if (!/\bpt\b/i.test(trimmed)) return { display: trimmed, key: normName(trimmed), explicit: false };
-    var display = collapseSpace(trimmed.replace(/\bpt\b/ig, ' ')).replace(/^[-–—|:,]+|[-–—|:,]+$/g, '').trim();
+    var free = titleHasFree(trimmed);
+    if (!trimmed) return { display: '', key: '', explicit: false, free: false };
+    if (!/\bpt\b/i.test(trimmed)) return { display: trimmed, key: normName(trimmed), explicit: false, free: free };
+    var display = collapseSpace(trimmed.replace(/\bpt\b/ig, ' ').replace(/\bfree\b/ig, ' ')).replace(/^[-–—|:,]+|[-–—|:,]+$/g, '').trim();
     display = collapseSpace(display);
-    if (!display) return { display: '', key: '', explicit: true };
-    return { display: display, key: normName(display), explicit: true };
+    if (!display) return { display: '', key: '', explicit: true, free: free };
+    return { display: display, key: normName(display), explicit: true, free: free };
   }
   function looksLikeClientName(display) {
     var s = collapseSpace(display);
@@ -725,7 +739,7 @@ var PT = (function () {
       end: ev.allDay ? '' : (ev.end || ''),
       allDay: !!ev.allDay,
       note: collapseSpace(ev.note || ''),
-      status: guessStatus(ev.note),
+      status: titleHasFree(ev.title) ? 'free' : guessStatus(ev.note),
       statusLocked: false,
       disposition: 'pending',
       hidden: false,
@@ -755,8 +769,40 @@ var PT = (function () {
       seen[id] = true;
       var parsed = parseTitle(ev.title);
       if (!parsed.key || parsed.key === 'pt' || parsed.key.length < 2) continue;
-      if (!parsed.explicit && isBuiltinIgnore(parsed.key)) continue;
       var prev = byId[id];
+      if (parsed.free && !parsed.explicit) {
+        if (isIgnoredName(ctx.ignored, parsed.key)) {
+          if (prev) {
+            prev.disposition = 'ignored';
+            prev.title = ev.title || prev.title;
+            prev.date = ev.date || prev.date;
+            prev.note = collapseSpace(ev.note || '');
+            prev.status = 'free';
+            prev.removed = false;
+          }
+          continue;
+        }
+        if (!prev) {
+          var freeRow = blankSession(ev, parsed, ctx.nowStamp || '');
+          freeRow.disposition = 'kept';
+          freeRow.status = 'free';
+          byId[id] = freeRow;
+          continue;
+        }
+        prev.title = ev.title || prev.title;
+        prev.clientName = parsed.display;
+        prev.date = ev.date || prev.date;
+        prev.start = ev.allDay ? '' : (ev.start || '');
+        prev.end = ev.allDay ? '' : (ev.end || '');
+        prev.allDay = !!ev.allDay;
+        prev.note = collapseSpace(ev.note || '');
+        prev.calendarId = ev.calendarId || prev.calendarId;
+        prev.removed = false;
+        prev.status = 'free';
+        if (!prev.hidden) prev.disposition = 'kept';
+        continue;
+      }
+      if (!parsed.explicit && isBuiltinIgnore(parsed.key)) continue;
       if (isIgnoredName(ctx.ignored, parsed.key)) {
         if (prev) {
           prev.disposition = 'ignored';
@@ -804,7 +850,8 @@ var PT = (function () {
       prev.calendarId = ev.calendarId || prev.calendarId;
       prev.removed = false;
       if (!prev.hidden && !prev.dispositionLocked) prev.disposition = disposition;
-      if (!prev.statusLocked) prev.status = guessStatus(prev.note);
+      if (titleHasFree(ev.title)) prev.status = 'free';
+      else if (!prev.statusLocked) prev.status = guessStatus(prev.note);
       if (prev.disposition === 'kept' && !prev.hidden && !wasKept) added.push(prev);
     }
     var start = ctx.windowStart || '';
@@ -828,6 +875,7 @@ var PT = (function () {
     for (i = 0; i < list.length; i++) {
       s = list[i];
       if (!s || s.disposition !== 'kept' || isYes(s.hidden) || isYes(s.removed)) continue;
+      if (s.status === 'free') continue;
       if (!s.date || s.date < cutoff) continue;
       created = String(s.createdAt || '').slice(0, 10);
       if (created !== today && created !== cutoff) continue;
@@ -843,6 +891,7 @@ var PT = (function () {
       s = sessions[i];
       created = String(s.createdAt || '').slice(0, 10);
       if (created !== today) continue;
+      if (s.status === 'free') continue;
       if (s.date && s.date < cutoff) n++;
     }
     return n;
@@ -1091,11 +1140,13 @@ var PT = (function () {
     savePeriods: savePeriods,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
-    moneyDue: moneyDue,
-    clientsWhoOwe: clientsWhoOwe,
     packageReady: packageReady,
+    defaultTiers: defaultTiers,
+    normalizeTiers: normalizeTiers,
     getTier: getTier,
     getTierLabel: getTierLabel,
+    sessionsToNextTier: sessionsToNextTier,
+    titleHasFree: titleHasFree,
     migrateClient: migrateClient,
     migrateClients: migrateClients,
     migrateCharge: migrateCharge,

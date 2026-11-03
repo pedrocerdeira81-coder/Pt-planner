@@ -30,7 +30,8 @@
   --shadow: 0 1px 1px rgba(50, 32, 10, 0.04), 0 10px 30px rgba(50, 32, 10, 0.06);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -42,6 +43,7 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .app {
+  width: 100%;
   max-width: 480px;
   min-height: 100dvh;
   margin: 0 auto;
@@ -88,7 +90,7 @@ button { cursor: pointer; }
   justify-content: center;
   letter-spacing: 0.04em;
 }
-.brand span { color: var(--green); }
+.brand .mark { color: #f4fff8; }
 .sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .icon-btn, .back {
   border: 0;
@@ -266,10 +268,15 @@ textarea { min-height: 80px; }
 .day-head b { font-size: 16px; }
 .today-mark { color: var(--green); }
 .empty { color: var(--muted); text-align: center; padding: 32px 16px; line-height: 1.45; }
-.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
 .stats div { background: var(--card); border-radius: 18px; padding: 12px 10px; box-shadow: var(--shadow); }
 .stats b { display: block; font-size: 15px; letter-spacing: -0.03em; margin-top: 4px; }
 .stats span { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; }
+.row.is-free { opacity: 0.55; }
+.row.is-free .name, .row.is-free .when b { color: var(--muted); font-weight: 650; }
+.tier-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.tier-row input { min-height: 44px; }
+.tier-row .ghost { width: auto; min-height: 44px; margin-top: 0; padding: 0 12px; }
 button:disabled { opacity: .35; }
 .banner {
   background: var(--green-soft);
@@ -299,6 +306,62 @@ ol.steps { margin: 8px 0 0; padding-left: 18px; }
 ol.steps li { margin: 6px 0; }
 a { color: var(--green); }
 .loading, .fatal { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; }
+@media (min-width: 768px) {
+  .app {
+    max-width: 1100px;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+  .app > .top { grid-column: 2; grid-row: 1; padding-bottom: 0; }
+  .app > .wrap { grid-column: 2; grid-row: 2; padding: 8px 28px 40px; }
+  .app > .nav {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 0;
+    left: auto;
+    transform: none;
+    width: auto;
+    height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+    background: #f3efe8;
+    padding: 22px 12px 22px;
+  }
+  .nav button {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    font-size: 15px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    text-align: left;
+  }
+  .nav button.on { background: var(--green-soft); }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
+  .home-split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr); gap: 22px; align-items: start; }
+  .home-today { min-width: 0; }
+  .client-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .client-grid > .client, .client-grid > .row, .client-grid > .card { margin-bottom: 0; }
+  .week-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; align-items: start; }
+  .week-grid .day-head { margin-top: 0; }
+  .report-layout { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
+  .detail { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
+  .backdrop { align-items: center; padding: 24px; }
+  .sheet { width: min(560px, 100%); border-radius: 22px; max-height: 86dvh; }
+  .toolbar .primary { width: auto; min-width: 200px; padding-left: 22px; padding-right: 22px; }
+}
+@media (min-width: 1024px) {
+  .client-grid { grid-template-columns: 1fr 1fr 1fr; }
+  .week-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 </style>
 </head>
 <body>
@@ -420,7 +483,8 @@ a { color: var(--green); }
   }
 
   function sessionButton(s) {
-    return '<button type="button" class="row" data-act="session" data-id="' + esc(s.eventId) + '">' +
+    var free = s.status === 'free';
+    return '<button type="button" class="row' + (free ? ' is-free' : '') + '" data-act="session" data-id="' + esc(s.eventId) + '">' +
       '<div class="when"><b>' + esc(prettyTime(s.start, s.allDay)) + '</b></div>' +
       '<div class="grow"><div class="name">' + esc(s.clientName) + '</div>' +
       (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '') +
@@ -472,6 +536,30 @@ a { color: var(--green); }
     return '<div class="backdrop" data-act="close"><div class="sheet" data-act="stop"><div class="handle"></div>' + ui.sheet + '<div class="err" id="form-error">' + esc(ui.error || '') + '</div></div></div>';
   }
 
+  function payFigures(period) {
+    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
+    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
+    var chargeTotal = period ? PT.periodChargeTotal(state.charges, period, state.today) : 0;
+    var est = PT.commissionEstimate({
+      sessionRevenue: earned,
+      chargeTotal: chargeTotal,
+      sessionCount: billable.length,
+      comm: state.settings
+    });
+    return { billable: billable, earned: earned, chargeTotal: chargeTotal, est: est };
+  }
+  function payStats(pay) {
+    var est = pay.est || {};
+    var off = state.settings && state.settings.showCommission === false;
+    var next = est.sessionsToNext ? String(est.sessionsToNext) : 'Top';
+    var tier = (est.tierPercent != null ? est.tierPercent : 0) + '%';
+    return '<div class="stats"><div><span>Sessions</span><b>' + pay.billable.length + '</b></div>' +
+      '<div><span>Tier</span><b>' + esc(tier) + '</b></div>' +
+      '<div><span>To next</span><b>' + esc(next) + '</b></div>' +
+      '<div><span>Revenue</span><b>' + esc(moneyExact(pay.earned)) + '</b></div>' +
+      '<div><span>Commission</span><b>' + (off ? 'Off' : esc(moneyExact(est.commission))) + '</b></div></div>';
+  }
+
   function homeScreen() {
     var today = state.today;
     var todays = (state.sessions || []).filter(function (s) {
@@ -483,45 +571,40 @@ a { color: var(--green); }
       return st.ready && (st.low || st.out);
     });
     var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients).ready; });
-    var owes = PT.clientsWhoOwe(state.clients);
     var period = viewedPeriod();
-    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
-    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
-    var due = owes.reduce(function (sum, row) { return sum + row.due; }, 0);
-    var est = PT.commissionEstimate({
-      sessionRevenue: earned,
-      chargeTotal: period ? PT.periodChargeTotal(state.charges, period, state.today) : 0,
-      sessionCount: billable.length,
-      comm: state.settings
-    });
-    var body = periodBar();
-    body += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
-    body += '<div class="stats"><div><span>Expected</span><b>' + esc(money(earned)) + '</b></div><div><span>To collect</span><b>' + esc(money(due)) + '</b></div><div><span>Commission</span><b>' + (state.settings.showCommission === false ? 'Off' : esc(money(Math.round(est.commission)))) + '</b></div></div>';
-    body += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
+    var pay = payFigures(period);
+    var lead = periodBar();
+    lead += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
+    lead += payStats(pay);
+    lead += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
     if (unmatched.length) {
-      body += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Only names without PT. PT names are added for you.</div></div></button>';
+      lead += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Only names without PT. PT names are added for you.</div></div></button>';
     }
-    body += '<h2>Today</h2>';
-    if (!todays.length) body += '<div class="card empty">Nothing on the calendar today.</div>';
-    todays.forEach(function (s) { body += sessionButton(s); });
-    if (owes.length) {
-      body += '<h2>Owes money</h2>';
-      owes.forEach(function (row) {
-        body += '<button type="button" class="row" data-act="open-client" data-id="' + esc(row.id) + '"><div class="grow"><div class="name">' + esc(row.name) + '</div><div class="note">' + (row.status === 'part' ? 'Part paid' : 'Unpaid') + '</div></div><b>' + esc(money(row.due)) + '</b></button>';
-      });
+    var todayCount = todays.filter(function (s) { return s.status !== 'free'; }).length;
+    var todayBlock = '<h2>Today <span class="meta">' + todayCount + '</span></h2>';
+    if (!todays.length) todayBlock += '<div class="card empty">Nothing on the calendar today.</div>';
+    todays.forEach(function (s) { todayBlock += sessionButton(s); });
+    var body = '<div class="home-split"><div class="home-lead">' + lead + '</div><div class="home-today">' + todayBlock + '</div></div>';
+    if (attention.length) {
+      body += '<h2>Low or out</h2><div class="client-grid">';
+      attention.forEach(function (c) { body += clientButton(c); });
+      body += '</div>';
     }
-    if (attention.length) body += '<h2>Low or out</h2>';
-    attention.forEach(function (c) { body += clientButton(c); });
     if (needs.length) {
-      body += '<h2>Set a package</h2>';
+      body += '<h2>Set a package</h2><div class="client-grid">';
       needs.forEach(function (c) { body += clientButton(c); });
+      body += '</div>';
     }
     body += '<h2>Packages</h2>';
     var rest = (state.clients || []).slice().sort(function (a, b) {
       return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
     });
     if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title contains PT.</div>';
-    rest.forEach(function (c) { body += clientButton(c); });
+    else {
+      body += '<div class="client-grid">';
+      rest.forEach(function (c) { body += clientButton(c); });
+      body += '</div>';
+    }
     return shell(longDate(today), body, '');
   }
 
@@ -533,24 +616,31 @@ a { color: var(--green); }
     var range = a.getUTCMonth() === b.getUTCMonth()
       ? (a.getUTCDate() + '–' + b.getUTCDate() + ' ' + months[a.getUTCMonth()])
       : (prettyDate(start) + ' – ' + prettyDate(end));
-    var body = '<div class="weekbar"><button type="button" class="ghost small" data-act="week" data-id="-1">Previous</button><b>' + esc(range) + '</b><button type="button" class="ghost small" data-act="week" data-id="1">Next</button></div>';
+    var body = '<div class="weekbar"><button type="button" class="ghost small" data-act="week" data-id="-1">Previous</button><b>' + esc(range) + '</b><button type="button" class="ghost small" data-act="week" data-id="1">Next</button></div><div class="week-grid">';
     var d, i, list, label;
     for (i = 0; i < 7; i++) {
       d = PT.addDaysYmd(start, i);
       list = (state.sessions || []).filter(function (s) { return s.date === d && s.disposition === 'kept'; }).sort(PT.compareSessions);
       label = prettyDate(d) + (d === state.today ? ' · Today' : '');
-      body += '<div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + list.length + '</span></div>';
+      var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
+      body += '<section class="day"><div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + counted + '</span></div>';
       if (!list.length) body += '<div class="meta" style="margin:0 2px 8px">Nothing</div>';
       list.forEach(function (s) { body += sessionButton(s); });
+      body += '</section>';
     }
+    body += '</div>';
     return shell('Week', body, '');
   }
 
   function clientsScreen() {
-    var body = '<button type="button" class="primary" data-act="new-client">Add a client</button>';
+    var body = '<div class="toolbar"><button type="button" class="primary" data-act="new-client">Add a client</button></div>';
     var list = (state.clients || []).slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
     if (!list.length) body += '<div class="card empty">No clients yet.</div>';
-    list.forEach(function (c) { body += clientButton(c); });
+    else {
+      body += '<div class="client-grid">';
+      list.forEach(function (c) { body += clientButton(c); });
+      body += '</div>';
+    }
     return shell('Clients', body, '');
   }
 
@@ -559,12 +649,12 @@ a { color: var(--green); }
     if (!c) return shell('Client', '<div class="card empty">That client is not here.</div>', '#clients');
     var st = PT.currentRemaining(c, state.sessions, state.clients);
     var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
-    var body = '<div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
+    var body = '<div class="detail"><div class="detail-side"><div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
       '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (!st.ready ? 'var(--ink)' : st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + (st.ready ? (st.remaining + '<small>left</small>') : '<small style="font-size:28px">Set the package</small>') + '</div>' +
-      '<p class="meta" style="margin-top:8px">' + (st.ready ? (st.used + ' of ' + st.total + ' used · ' + money(st.remainingValue) + ' left') : 'Add the package size and what is left.') + '</p>' +
-      '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Price</span></div><div class="stat"><b>' + esc(money(st.due)) + '</b><span>' + (st.paymentStatus === 'paid' ? 'Paid' : st.paymentStatus === 'part' ? 'Still due' : 'Unpaid') + '</span></div></div>' +
-      '<p class="meta">Counts from ' + esc(st.startDate ? prettyDate(st.startDate) : 'the start date') + (st.expiry ? ' · until ' + esc(prettyDate(st.expiry)) : '') + (st.note ? ' · ' + esc(st.note) : '') + '</p>' +
-      '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div>';
+      '<p class="meta" style="margin-top:8px">' + (st.ready ? (st.used + ' of ' + st.total + ' used · ' + moneyExact(st.perSession) + ' each') : 'Add the package size, what is left, and the price.') + '</p>' +
+      '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Package</span></div><div class="stat"><b>' + (st.ready ? esc(moneyExact(st.remainingValue)) : '—') + '</b><span>Value left</span></div></div>' +
+      '<p class="meta">Counts from ' + esc(st.startDate ? prettyDate(st.startDate) : 'the start date') + (st.note ? ' · ' + esc(st.note) : '') + '</p>' +
+      '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div></div><div class="detail-main">';
     var packages = PT.sortPackages(c.packages || []);
     if (packages.length > 1) {
       body += '<h2>History</h2>';
@@ -585,6 +675,7 @@ a { color: var(--green); }
     charges.forEach(function (ch) { body += chargeRow(ch); });
     body += '<button type="button" class="ghost" data-act="add-charge" data-id="' + esc(c.id) + '">Add an AED charge</button>';
     body += '<button type="button" class="danger" data-act="ask-delete" data-id="' + esc(c.id) + '">Remove client</button>';
+    body += '</div></div>';
     return shell('', body, '#clients');
   }
 
@@ -598,24 +689,14 @@ a { color: var(--green); }
 
   function reportScreen() {
     var period = viewedPeriod();
-    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
-    var revenue = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
-    var chargeTotal = period ? PT.periodChargeTotal(state.charges, period, state.today) : 0;
-    var est = PT.commissionEstimate({
-      sessionRevenue: revenue,
-      chargeTotal: chargeTotal,
-      sessionCount: billable.length,
-      comm: state.settings
-    });
+    var pay = payFigures(period);
     var body = periodBar();
     if (!period) return shell('Report', body + '<div class="card empty">Set the pay period and the report will use those dates.</div>', '');
-    body += '<div class="card" style="margin-top:12px"><div class="meta">Sessions this period</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + billable.length + '</div><p class="meta">Free sessions are not counted. ' + esc(money(revenue)) + ' expected from packages. Charges ' + esc(money(chargeTotal)) + '.</p></div>';
-    if (state.settings.showCommission !== false) {
-      body += '<div class="card"><div class="spread"><div class="meta">Commission estimate</div><button type="button" class="ghost small" data-act="nav" data-go="#settings">Settings</button></div>' +
-        '<div class="hero-num" style="font-size:40px;color:var(--green);margin:8px 0">' + esc(moneyExact(est.commission)) + '</div>' +
-        '<div class="meta">' + esc(est.tierLabel) + ' · ' + billable.length + ' sessions</div>' +
-        '<div class="grid" style="margin-top:10px"><div class="stat"><b>' + esc(money(est.totalRevenue)) + '</b><span>Revenue</span></div><div class="stat"><b>' + esc(money(est.netRevenue)) + '</b><span>Net</span></div><div class="stat"><b>' + esc(money(est.quota)) + '</b><span>Quota</span></div><div class="stat"><b>' + esc(money(est.commRevenue)) + '</b><span>Above quota</span></div></div></div>';
-    }
+    body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Sessions this period</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + pay.billable.length + '</div>' +
+      '<p class="meta">' + esc(pay.est.tierLabel) + '. ' + (pay.est.sessionsToNext ? (pay.est.sessionsToNext + ' to the next tier.') : 'Top tier.') + ' Free sessions are not counted.</p>' +
+      payStats(pay) +
+      '<p class="meta">Net ' + esc(moneyExact(pay.est.netRevenue)) + ' after ' + esc(String(Math.round(pay.est.netFactor * 100) / 100)) + '%. Quota ' + esc(moneyExact(pay.est.quota)) + ' comes off. Commission revenue ' + esc(moneyExact(pay.est.commRevenue)) + '. Charges ' + esc(money(pay.chargeTotal)) + (pay.est.includeCharges ? ' are in the commission.' : ' stay out of the commission.') + '</p></div>';
+    body += '</div><div class="report-people">';
     var rows = (state.clients || []).map(function (c) {
       var list = PT.sessionsForClient(c, state.sessions, state.clients).filter(function (s) {
         return PT.inPeriod(s.date, period, state.today);
@@ -626,11 +707,15 @@ a { color: var(--green); }
     }).filter(function (r) { return r.counted || r.free; }).sort(function (a, b) { return b.counted - a.counted; });
     body += '<h2>By client</h2>';
     if (!rows.length) body += '<div class="card empty">No sessions in these dates.</div>';
-    rows.forEach(function (r) {
-      body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + '</b></div>' +
-        (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</div>';
-    });
-    body += '<button type="button" class="ghost" data-act="nav" data-go="#charges">Charges in AED</button>';
+    else {
+      body += '<div class="client-grid">';
+      rows.forEach(function (r) {
+        body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + '</b></div>' +
+          (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</div>';
+      });
+      body += '</div>';
+    }
+    body += '<button type="button" class="ghost" data-act="nav" data-go="#charges">Charges in AED</button></div></div>';
     return shell('Report', body, '');
   }
 
@@ -643,7 +728,11 @@ a { color: var(--green); }
     body += '<button type="button" class="primary" data-act="add-charge">Add a charge</button>';
     if (!period) body += '<div class="card empty">Set the pay period first.</div>';
     else if (!list.length) body += '<div class="card empty">No charges in this period.</div>';
-    list.forEach(function (ch) { body += chargeRow(ch); });
+    else {
+      body += '<div class="client-grid">';
+      list.forEach(function (ch) { body += chargeRow(ch); });
+      body += '</div>';
+    }
     return shell('Charges', body, '#report');
   }
 
@@ -670,13 +759,35 @@ a { color: var(--green); }
     return shell('Names', body, '#home');
   }
 
+  function tierRows(tiers) {
+    var list = (tiers && tiers.length) ? tiers : PT.defaultTiers();
+    return list.map(function (row, i) {
+      return '<div class="tier-row"><input data-field="tier-from" inputmode="numeric" aria-label="From sessions" value="' + esc(row.from) + '">' +
+        '<input data-field="tier-rate" inputmode="decimal" aria-label="Rate percent" value="' + esc(row.rate) + '">' +
+        '<button type="button" class="ghost" data-act="remove-tier" data-id="' + i + '">Remove</button></div>';
+    }).join('');
+  }
+  function readTierInputs(root) {
+    var scope = root || document;
+    var froms = scope.querySelectorAll('[data-field="tier-from"]');
+    var rates = scope.querySelectorAll('[data-field="tier-rate"]');
+    var out = [], i;
+    for (i = 0; i < froms.length; i++) out.push({ from: froms[i].value, rate: rates[i] ? rates[i].value : '' });
+    return out;
+  }
   function settingsScreen() {
     var s = state.settings || {};
-    var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div><div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on the report</label>' +
+    var net = (s.netFactor != null && s.netFactor !== '') ? s.netFactor : PT.normalizeComm({}).netFactor;
+    var quota = (s.quota != null && s.quota !== '') ? s.quota : '7758';
+    var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div><div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on Home and Report</label>' +
       '<label class="check"><input data-field="includeCharges" type="checkbox"' + (s.includeCharges ? ' checked' : '') + '> Add AED charges into the commission</label>' +
-      '<label>Quota for a pay period (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(s.quota || '7758') + '">' +
-      '<label>Net factor (%)</label><input data-field="netFactor" inputmode="decimal" value="' + esc(s.netFactor || '81.63') + '">' +
-      '<p class="meta">The quota is for the pay period you select, not a calendar month. Up to 80 sessions 45% · 81–100 is 60% · 101–119 is 65% · 120+ is 70%. Free sessions are not counted.</p>' +
+      '<label>Quota for a pay period (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(quota) + '">' +
+      '<label>Net factor (%)</label><input data-field="netFactor" inputmode="decimal" value="' + esc(net) + '">' +
+      '<p class="meta">The J Club sheet shows 81.63%. This longer number is the same factor, kept so the fils match. The quota is always taken off after the net.</p>' +
+      '<label>Tiers</label><p class="meta">From this many sessions in the pay period, this rate applies. Free sessions are not counted. The next tier is the following row.</p>' +
+      '<div class="tier-row"><span class="meta" style="flex:1">From sessions</span><span class="meta" style="flex:1">Rate %</span><span style="width:84px"></span></div>' +
+      tierRows(s.tiers) +
+      '<button type="button" class="ghost" data-act="add-tier">Add a tier</button>' +
       '<button type="button" class="primary" data-act="save-settings">Save</button></div>';
     body += '<div class="card"><b>Morning email</b><p class="meta">Every day around 5:00 (Dubai time) the planner checks the calendar and emails pedrocerdeira81@gmail.com. The subject is exactly “PT Planner daily sync”.</p>' +
       '<button type="button" class="ghost" data-act="email">Email today’s summary</button></div>';
@@ -708,18 +819,10 @@ a { color: var(--green); }
   }
 
   function payFields(pkg, left) {
-    var status = pkg && pkg.paymentStatus ? pkg.paymentStatus : 'unpaid';
-    var method = pkg && pkg.method ? pkg.method : '';
-    function opt(value, label, current) { return '<option value="' + value + '"' + (current === value ? ' selected' : '') + '>' + label + '</option>'; }
     return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg && pkg.sessions ? pkg.sessions : '') + '">' +
       '<label>Sessions left</label><input data-field="sessionsLeft" inputmode="numeric" value="' + esc(left) + '">' +
-      '<label>Price (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg && pkg.value ? pkg.value : '') + '">' +
+      '<label>Package value (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg && pkg.value ? pkg.value : '') + '">' +
       '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
-      '<label>Expires, if it does</label><input data-field="expiry" type="date" value="' + esc(pkg && pkg.expiry ? pkg.expiry : '') + '">' +
-      '<label>Payment</label><select data-field="paymentStatus">' + opt('unpaid', 'Unpaid', status) + opt('part', 'Part paid', status) + opt('paid', 'Paid', status) + '</select>' +
-      '<label>Amount received (AED)</label><input data-field="amountReceived" inputmode="decimal" value="' + esc(pkg && pkg.amountReceived ? pkg.amountReceived : '') + '">' +
-      '<label>How he paid</label><select data-field="method">' + opt('', 'Not yet', method) + opt('cash', 'Cash', method) + opt('card', 'Card', method) + opt('transfer', 'Bank transfer', method) + '</select>' +
-      '<label>Payment date</label><input data-field="paymentDate" type="date" value="' + esc(pkg && pkg.paymentDate ? pkg.paymentDate : '') + '">' +
       '<label>Notes</label><input data-field="note" value="' + esc(pkg && pkg.note ? pkg.note : '') + '">';
   }
   function readPackage(root) {
@@ -729,11 +832,6 @@ a { color: var(--green); }
       sessionsLeft: field('sessionsLeft', root),
       value: field('value', root),
       startDate: field('start', root),
-      expiry: field('expiry', root),
-      paymentStatus: field('paymentStatus', root),
-      amountReceived: field('amountReceived', root),
-      method: field('method', root),
-      paymentDate: field('paymentDate', root),
       note: field('note', root)
     };
   }
@@ -1052,12 +1150,22 @@ a { color: var(--green); }
       }]);
       return;
     }
+    if (act === 'add-tier' || act === 'remove-tier') {
+      var edited = readTierInputs(el.closest('.sheet') || document);
+      if (act === 'add-tier') edited.push({ from: '', rate: '' });
+      else edited.splice(Number(el.getAttribute('data-id')), 1);
+      state.settings = state.settings || {};
+      state.settings.tiers = edited;
+      render();
+      return;
+    }
     if (act === 'save-settings') {
       go('apiSaveSettings', [{
         showCommission: field('showCommission'),
         includeCharges: field('includeCharges'),
         quota: field('quota'),
-        netFactor: field('netFactor')
+        netFactor: field('netFactor'),
+        tiers: readTierInputs(document)
       }]);
       return;
     }
@@ -1120,15 +1228,9 @@ a { color: var(--green); }
         };
       });
     }
-    function pay(client, extra) {
-      var pkgs = client.packages.slice();
-      pkgs[pkgs.length - 1] = Object.assign({}, pkgs[pkgs.length - 1], extra);
-      client.packages = pkgs;
-      return client;
-    }
     var clients = [
-      pay(PT.migrateClient({ id: 'larissa', name: 'Larissa', packageSessions: '20', packageValue: '7000', startDate: '2026-09-01' }), { paymentStatus: 'paid', amountReceived: '7000', method: 'transfer', paymentDate: '2026-09-01' }),
-      pay(PT.migrateClient({ id: 'jeremy', name: 'Jeremy', packageSessions: '12', packageValue: '4800', startDate: '2026-08-01' }), { paymentStatus: 'part', amountReceived: '2000', method: 'card', paymentDate: '2026-08-02' }),
+      PT.migrateClient({ id: 'larissa', name: 'Larissa', packageSessions: '20', packageValue: '7000', startDate: '2026-09-01' }),
+      PT.migrateClient({ id: 'jeremy', name: 'Jeremy', packageSessions: '12', packageValue: '4800', startDate: '2026-08-01' }),
       PT.migrateClient({
         id: 'mohammad',
         name: 'Mohammad family',
@@ -1137,8 +1239,8 @@ a { color: var(--green); }
           { id: 'm-now', sessions: '10', value: '5500', startDate: '2026-06-01' }
         ]
       }),
-      pay(PT.migrateClient({ id: 'sofia', name: 'Sofia', packageSessions: '16', packageValue: '6400', startDate: '2026-10-01' }), { paymentStatus: 'paid', amountReceived: '6400', method: 'cash', paymentDate: '2026-10-01' }),
-      PT.migrateClient({ id: 'omar', name: 'Omar', packageSessions: '', packageValue: '', startDate: '2026-11-02', paymentStatus: 'unpaid' })
+      PT.migrateClient({ id: 'sofia', name: 'Sofia', packageSessions: '16', packageValue: '6400', startDate: '2026-10-01' }),
+      PT.migrateClient({ id: 'omar', name: 'Omar', packageSessions: '', packageValue: '', startDate: '2026-11-02' })
     ];
     var sessions = []
       .concat(many('Larissa', ['2026-09-03', '2026-09-10', '2026-09-17', '2026-10-01', '2026-10-22', '2026-11-05', '2026-11-09', '2026-11-12', '2026-11-16', '2026-11-19', '2026-11-23', '2026-11-26', '2026-11-30'], '07:00'))
@@ -1152,7 +1254,7 @@ a { color: var(--green); }
       statusLocked: false, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
     });
     sessions.push({
-      eventId: 'jeremy-today', calendarId: 'example', title: 'Jeremy Pt', clientName: 'Jeremy',
+      eventId: 'jeremy-today', calendarId: 'example', title: 'Jeremy Pt free', clientName: 'Jeremy',
       date: '2026-11-02', start: '09:00', end: '10:00', allDay: false, note: 'Free pra compensar outras sessoes',
       status: 'free', statusLocked: true, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
     });

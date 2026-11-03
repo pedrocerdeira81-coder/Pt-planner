@@ -1,6 +1,6 @@
 # PT Planner
 
-Pedro’s sessions come from his Google Calendar. A title with **PT** in it, such as `Omar PT` or `Jeremy Pt`, becomes a client on its own. Clients, packages, payments, and pay periods stay in a private Google Sheet on his account. Nothing about a client is stored on this public website.
+Pedro’s sessions come from his Google Calendar. A title with **PT** in it, such as `Omar PT` or `Jeremy Pt`, becomes a client on its own. A title that contains the word **free**, such as `PT Omar free` or `Free session`, still shows on the day, marked Free, and is left out of every count. Clients, packages, and pay periods stay in a private Google Sheet on his account. Nothing about a client is stored on this public website.
 
 The old page is still at the same address. This planner is a separate link he puts on his iPhone.
 
@@ -91,29 +91,27 @@ A calendar title with PT creates the client. The package starts today, so older 
 
 48. Tap a client that says **Set package**, or tap **Clients**, then the person.
 49. Tap **Fix numbers** (it may say that on the client page).
-50. Enter the package size, how many are left, the price in AED, and the start date.
-51. Expiry is optional.
-52. Choose **Unpaid**, **Part paid**, or **Paid**. Enter the amount received, cash, card, or bank transfer, the payment date, and a note if you want one.
-53. Tap **Save**.
+50. Enter the package size, how many are left, the package value in AED, and the start date.
+51. Tap **Save**.
 
 Names without PT, such as a bare first name, stay under **name to sort**. Match them, save them as a client, or tap **Ignore this name**. **Resumo** and **New month** are already skipped.
 
 ### Check the morning email
 
-54. Tap the sliders icon.
-55. Tap **Email today’s summary**.
-56. Open Gmail and find the subject `PT Planner daily sync`.
+52. Tap the sliders icon.
+53. Tap **Email today’s summary**.
+54. Open Gmail and find the subject `PT Planner daily sync`.
 
 After that, leave it. Around 5:00 Dubai time the same email arrives even if the phone stays closed. Google may start it up to about 15 minutes either side of 5:00.
 
 ## Day to day
 
-- **Home** shows the pay period, what you expect to earn in it, what is still to collect, the commission estimate, today’s sessions, who owes money, and who is low or out.
-- **Week** is the calendar week. Package counts still follow the pay period and each client’s start date.
-- Tap a session to mark it **Normal**, **Free**, or **Charged**. Free does not use a session. Normal and charged do.
+- **Home** shows the pay period, sessions in it, the current tier, how many sessions until the next tier, revenue, commission, today’s sessions, and who is low or out. A free session is faded and is not in the number beside Today.
+- **Week** is the calendar week. The number on each day leaves free sessions out. Package counts still follow the pay period and each client’s start date.
+- Tap a session to mark it **Normal**, **Free**, or **Charged**. Free does not use a session. Normal and charged do. If the calendar title contains the word free, the next check marks it Free again.
 - **Renew** keeps the old package in the history. The new one must start after the old one.
-- **Report** and **Charges** use the pay period you are viewing.
-- The quota in the gear is for one pay period. It starts at 7,758 AED, with a net factor of 81.63%. Up to 80 sessions is 45%, 81–100 is 60%, 101–119 is 65%, and 120 or more is 70%. Charges stay out of the commission until you switch that on.
+- **Report** uses the same sessions, tier, revenue, and commission as Home. **Charges** uses the pay period you are viewing.
+- The quota in the gear is for one pay period. It starts at 7,758 AED and is always taken off. The net factor starts at the precise September 2026 figure (the form prints it as 81.63%). Up to 80 sessions is 45%, 81–100 is 60%, 101–119 is 65%, and 120 or more is 70%. Those rows can be edited. Charges stay out of the commission until you switch that on.
 - **Update from Calendar** checks again before 5:00.
 
 ## Good to know
@@ -140,6 +138,8 @@ These are example clients, not Pedro’s. The sample period is 29 Oct to 29 Nov.
 ![Example charges in the pay period](docs/screenshots/06-charges.png)
 
 ![A name without PT, still to sort](docs/screenshots/07-names.png)
+
+![Commission tiers in settings](docs/screenshots/08-settings.png)
 
 ## For the assistant
 

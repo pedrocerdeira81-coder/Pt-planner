@@ -9,7 +9,7 @@ function doGet() {
   return HtmlService.createHtmlOutput(appHtml_())
     .setTitle('PT Planner')
     .setFaviconUrl('https://pedrocerdeira81-coder.github.io/Pt-planner/icons/planner-180.png')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -131,11 +131,6 @@ function apiMap(obj) {
         sessionsLeft: obj.sessionsLeft,
         value: obj.value,
         startDate: obj.startDate || todayDubai_(),
-        expiry: obj.expiry,
-        paymentStatus: obj.paymentStatus,
-        amountReceived: obj.amountReceived,
-        method: obj.method,
-        paymentDate: obj.paymentDate,
         note: obj.note
       }, sessions, clients);
       var created = clients[clients.length - 1];
@@ -214,14 +209,14 @@ function apiSaveSettings(obj) {
       quota: obj.quota,
       netFactor: obj.netFactor,
       includeCharges: !!obj.includeCharges,
-      showCommission: obj.showCommission !== false && obj.showCommission !== 'false'
+      showCommission: obj.showCommission !== false && obj.showCommission !== 'false',
+      tiers: obj.tiers
     });
-    if (obj.quota === '' || obj.quota == null) comm.quota = '7758';
-    if (obj.netFactor === '' || obj.netFactor == null) comm.netFactor = '81.63';
     setSetting_('quota', String(comm.quota));
     setSetting_('netFactor', String(comm.netFactor));
     setSetting_('includeCharges', comm.includeCharges ? 'yes' : '');
     setSetting_('showCommission', comm.showCommission ? 'yes' : 'no');
+    setSetting_('tiers', JSON.stringify(comm.tiers));
     return publicState_();
   });
 }
@@ -482,10 +477,11 @@ function publicState_() {
 function phoneSettings_() {
   var show = getSetting_('showCommission');
   var comm = PT.normalizeComm({
-    quota: getSetting_('quota') || '7758',
-    netFactor: getSetting_('netFactor') || '81.63',
+    quota: getSetting_('quota'),
+    netFactor: getSetting_('netFactor'),
     includeCharges: getSetting_('includeCharges') === 'yes',
-    showCommission: show === 'no' ? false : true
+    showCommission: show === 'no' ? false : true,
+    tiers: parseJson_(getSetting_('tiers'), [])
   });
   comm.periods = PT.sortPeriods(parseJson_(getSetting_('periods'), []));
   return comm;
@@ -500,11 +496,6 @@ function packageFields_(obj) {
     sessionsLeft: obj.sessionsLeft,
     value: obj.value,
     startDate: clip_(obj.startDate, 10),
-    expiry: clip_(obj.expiry, 10),
-    paymentStatus: obj.paymentStatus,
-    amountReceived: obj.amountReceived,
-    method: obj.method,
-    paymentDate: clip_(obj.paymentDate, 10),
     note: clip_(obj.note, 500)
   };
 }

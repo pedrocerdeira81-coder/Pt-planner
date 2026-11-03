@@ -30,12 +30,14 @@ function ev(id, title, date, note, start) {
 }
 
 test('calendar titles keep the client and drop a trailing PT', () => {
-  assert.deepEqual(PT.parseTitle('Larissa PT'), { display: 'Larissa', key: 'larissa', explicit: true });
-  assert.deepEqual(PT.parseTitle('Jeremy Pt '), { display: 'Jeremy', key: 'jeremy', explicit: true });
-  assert.deepEqual(PT.parseTitle('Mohammad family PT'), { display: 'Mohammad family', key: 'mohammad family', explicit: true });
-  assert.deepEqual(PT.parseTitle('  aurelie '), { display: 'aurelie', key: 'aurelie', explicit: false });
+  assert.deepEqual(PT.parseTitle('Larissa PT'), { display: 'Larissa', key: 'larissa', explicit: true, free: false });
+  assert.deepEqual(PT.parseTitle('Jeremy Pt '), { display: 'Jeremy', key: 'jeremy', explicit: true, free: false });
+  assert.deepEqual(PT.parseTitle('Mohammad family PT'), { display: 'Mohammad family', key: 'mohammad family', explicit: true, free: false });
+  assert.deepEqual(PT.parseTitle('  aurelie '), { display: 'aurelie', key: 'aurelie', explicit: false, free: false });
   assert.equal(PT.parseTitle('Larissa - PT').explicit, true);
   assert.equal(PT.parseTitle('Larissa - PT').display, 'Larissa');
+  assert.equal(PT.parseTitle('Freedom PT').free, false);
+  assert.equal(PT.parseTitle('Freedom PT').display, 'Freedom');
 });
 
 test('Resumo and New month are ignored, a bare client name is not', () => {
@@ -164,7 +166,32 @@ test('commission uses the saved tiers and leaves charges out unless asked', () =
   assert.equal(on.commission, 7110);
   assert.equal(PT.getTier(80), 0.45);
   assert.equal(PT.getTier(81), 0.60);
+  assert.equal(PT.getTier(100), 0.60);
+  assert.equal(PT.getTier(101), 0.65);
+  assert.equal(PT.getTier(119), 0.65);
   assert.equal(PT.getTier(120), 0.70);
+  assert.equal(PT.sessionsToNextTier(80), 1);
+  assert.equal(PT.sessionsToNextTier(109), 11);
+  assert.equal(PT.sessionsToNextTier(120), 0);
+  assert.equal(PT.getTierLabel(109), '101-119 · 65%');
+});
+
+test('September 2026 J Club commission matches the form to the fils', () => {
+  const est = PT.commissionEstimate({
+    sessionRevenue: 37304.50,
+    sessionCount: 109,
+    chargeTotal: 0,
+    comm: {}
+  });
+  assert.equal(est.totalRevenue, 37304.50);
+  assert.equal(est.netRevenue, 30452.65);
+  assert.equal(est.quota, 7758);
+  assert.equal(est.commRevenue, 22694.65);
+  assert.equal(est.tierRate, 0.65);
+  assert.equal(est.tierLabel, '101-119 · 65%');
+  assert.equal(est.sessionsToNext, 11);
+  assert.equal(est.commission, 14751.52);
+  assert.equal(est.netRevenue, Math.round(37304.50 * (30452.65 / 37304.50) * 100) / 100);
 });
 
 test('daily email has the fixed subject and the four sections', () => {
@@ -187,7 +214,9 @@ test('daily email has the fixed subject and the four sections', () => {
   assert.equal(mail.subject, 'PT Planner daily sync');
   assert.equal(mail.to, 'pedrocerdeira81@gmail.com');
   assert.match(mail.body, /^PT Planner daily sync\nStatus: ok\nWhen: 2026-11-02 05:07 Asia\/Dubai/);
-  assert.match(mail.body, /Sessions added: 1/);
+  const addedPart = mail.body.split('Clients low')[0];
+  assert.match(addedPart, /Sessions added: 0/);
+  assert.doesNotMatch(addedPart, /Jeremy/);
   assert.match(mail.body, /Jeremy \| 2026-11-02 09:00 \| free \| Free pra compensar outras sessoes/);
   assert.match(mail.body, /Older sessions saved: 1/);
   assert.match(mail.body, /Clients low or out: 1/);
@@ -264,16 +293,61 @@ test('a PT title becomes a client and older sessions stay outside a fresh packag
     sessions: '10',
     sessionsLeft: '10',
     value: '4000',
-    startDate: TODAY,
-    paymentStatus: 'part',
-    amountReceived: '1500',
-    method: 'card'
+    startDate: TODAY
   }, result.sessions, result.clients);
   const stats = PT.currentRemaining(saved, result.sessions, [saved]);
   assert.equal(stats.used, 2);
   assert.equal(stats.remaining, 10);
-  assert.equal(stats.paymentStatus, 'part');
-  assert.equal(PT.moneyDue(saved).due, 2500);
+  assert.equal(stats.perSession, 400);
+  assert.equal(saved.packages[0].expiry, undefined);
+  assert.equal(saved.packages[0].paymentStatus, undefined);
+});
+
+test('a title containing free is not counted, even on a later sync', () => {
+  const result = PT.applySync([], [
+    ev('omar', 'PT Omar free', TODAY, '', '09:00'),
+    ev('plain', 'Free session', TODAY, '', '10:00'),
+    ev('word', 'Freedom PT', TODAY, '', '11:00')
+  ], Object.assign({ clients: [], ignored: [], today: TODAY }, WINDOW));
+  assert.deepEqual(result.clients.map((c) => c.name).sort(), ['Freedom', 'Omar']);
+  const omar = result.sessions.find((s) => s.eventId === 'omar');
+  const plain = result.sessions.find((s) => s.eventId === 'plain');
+  assert.equal(omar.clientName, 'Omar');
+  assert.equal(omar.status, 'free');
+  assert.equal(omar.disposition, 'kept');
+  assert.equal(plain.clientName, 'Free session');
+  assert.equal(plain.status, 'free');
+  assert.equal(plain.disposition, 'kept');
+  assert.equal(PT.unmatchedFromSessions(result.sessions, result.clients).length, 0);
+  const period = { start: '2026-10-29', end: '2026-11-29' };
+  let clients = result.clients.map((c) => {
+    if (c.name === 'Omar') {
+      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '8', value: '4000', startDate: '2026-11-01' }, result.sessions, result.clients);
+    }
+    if (c.name === 'Freedom') {
+      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '10', value: '2000', startDate: '2026-11-01' }, result.sessions, result.clients);
+    }
+    return c;
+  });
+  const omarClient = clients.find((c) => c.name === 'Omar');
+  assert.equal(PT.currentRemaining(omarClient, result.sessions, clients).used, 0);
+  assert.equal(PT.currentRemaining(omarClient, result.sessions, clients).remaining, 8);
+  assert.equal(PT.periodBillable(clients, result.sessions, period, TODAY).length, 1);
+  assert.equal(PT.periodSessionRevenue(clients, result.sessions, period, TODAY), 200);
+  const locked = PT.setStatus(result.sessions, 'omar', 'normal');
+  assert.equal(locked.find((s) => s.eventId === 'omar').statusLocked, true);
+  const again = PT.applySync(locked, [
+    ev('omar', 'PT Omar free', TODAY, '', '09:00'),
+    ev('plain', 'Free session', TODAY, '', '10:00'),
+    ev('word', 'Freedom PT', TODAY, '', '11:00')
+  ], Object.assign({ clients: result.clients, ignored: [], today: TODAY }, WINDOW));
+  assert.equal(again.sessions.find((s) => s.eventId === 'omar').status, 'free');
+  assert.equal(again.clients.filter((c) => c.name === 'Omar').length, 1);
+  const mail = PT.buildSummary({ clients: clients, sessions: again.sessions, settings: { periods: [period] } }, TODAY, '2026-11-02 05:07 Asia/Dubai');
+  const addedPart = mail.body.split('Clients low')[0];
+  assert.match(addedPart, /Sessions added: 1/);
+  assert.doesNotMatch(addedPart, /Omar/);
+  assert.doesNotMatch(addedPart, /Free session/);
 });
 
 test('pay periods are exact dates and the current one is the period that contains today', () => {
