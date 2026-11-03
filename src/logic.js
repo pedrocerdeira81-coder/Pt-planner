@@ -266,6 +266,16 @@ var PT = (function () {
     if (!found) next.push({ id: made, start: start, end: end });
     return { periods: sortPeriods(next), id: found ? id : made };
   }
+  function syncWindow(today, periods) {
+    var ahead = addDaysYmd(today, 60);
+    var fallback = addDaysYmd(today, -60);
+    var cap = addDaysYmd(today, -120);
+    var period = activePeriod(periods, today);
+    var start = (period && period.start) ? period.start : fallback;
+    if (start < cap) start = cap;
+    if (!start || start > today) start = fallback;
+    return { windowStart: start, windowEnd: ahead };
+  }
   function resolvedNetFactor(comm) {
     var n = Number(comm && comm.netFactor);
     if (!n) n = 81.63;
@@ -1079,6 +1089,7 @@ var PT = (function () {
     sortPeriods: sortPeriods,
     activePeriod: activePeriod,
     savePeriods: savePeriods,
+    syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
     moneyDue: moneyDue,
     clientsWhoOwe: clientsWhoOwe,

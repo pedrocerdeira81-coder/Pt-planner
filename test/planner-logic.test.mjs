@@ -294,6 +294,13 @@ test('pay periods are exact dates and the current one is the period that contain
   assert.equal(edited.periods.length, 2);
   assert.equal(PT.inPeriod('2026-11-25', edited.periods[1]), false);
   assert.throws(() => PT.savePeriods(periods, { start: '2026-12-02', end: '2026-12-01' }), /before/);
+  const win = PT.syncWindow('2026-11-03', periods);
+  assert.equal(win.windowStart, '2026-10-29');
+  assert.equal(win.windowEnd, '2027-01-02');
+  const recent = PT.syncWindow('2026-11-03', []);
+  assert.equal(recent.windowStart, '2026-09-04');
+  const ancient = PT.syncWindow('2026-11-03', [{ id: 'old', start: '2025-01-01', end: '2026-12-01' }]);
+  assert.equal(ancient.windowStart, '2026-07-06');
 });
 
 test('exact names do not let Ali take Alison', () => {

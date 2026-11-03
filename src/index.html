@@ -454,6 +454,8 @@ a { color: var(--green); }
     } else if (ui.boot && ui.boot.error) {
       notice = '<div class="warn">' + esc(ui.boot.error) + '</div>';
     }
+    if (ui.syncing) notice += '<div class="banner">Syncing calendar…</div>';
+    if (ui.syncError) notice += '<div class="warn">' + esc(ui.syncError) + ' Tap Update from Calendar to try again.</div>';
     if (!EXAMPLE && state && state.triggerError) notice += '<div class="warn">' + esc(state.triggerError) + '</div>';
     if (!EXAMPLE && state && state.triggerReady === false) notice += '<div class="warn">The 5:00 check is not on yet. Stay on this page. If Google asks, tap Allow.</div>';
     return top + '<div class="app" data-screen="' + esc(route().name) + '">' + head + '<div class="wrap">' + notice + body + '</div>' + nav() + sheet() + '</div>';
@@ -877,12 +879,45 @@ a { color: var(--green); }
     }
   }
 
-  function call(name, args) {
+  function call(name, args, timeoutMs) {
     return new Promise(function (resolve, reject) {
-      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (err) {
-        reject(new Error((err && err.message) || 'Could not reach PT Planner.'));
-      });
-      runner[name].apply(runner, args || []);
+      var settled = false;
+      var limit = window.PT_CALL_TIMEOUT || timeoutMs || 20000;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error('This is taking too long. Check the connection, then tap Try again.'));
+      }, limit);
+      function finish(fn, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(value);
+      }
+      try {
+        if (!(window.google && google.script && google.script.run)) {
+          finish(reject, new Error('Open PT Planner from the Google link, in Safari.'));
+          return;
+        }
+        // google.script.run ignores Function.apply and Function.call, and then
+        // neither handler runs. Call the server function directly.
+        var runner = google.script.run
+          .withSuccessHandler(function (value) { finish(resolve, value); })
+          .withFailureHandler(function (err) {
+            var message = 'Could not reach PT Planner.';
+            if (err && err.message) message = String(err.message);
+            else if (typeof err === 'string' && err) message = err;
+            finish(reject, new Error(message));
+          });
+        args = args || [];
+        if (args.length === 0) runner[name]();
+        else if (args.length === 1) runner[name](args[0]);
+        else if (args.length === 2) runner[name](args[0], args[1]);
+        else if (args.length === 3) runner[name](args[0], args[1], args[2]);
+        else finish(reject, new Error('PT Planner could not send that request.'));
+      } catch (err) {
+        finish(reject, new Error((err && err.message) || 'PT Planner could not start.'));
+      }
     });
   }
 
@@ -910,7 +945,8 @@ a { color: var(--green); }
         return;
       }
       ui.loading = true;
-      call(name, args).then(afterSave).catch(function (err) { ui.loading = false; showError(err.message); });
+      var slow = name === 'apiSyncNow' || name === 'apiEmailSummary';
+      call(name, args, slow ? 120000 : 20000).then(afterSave).catch(function (err) { ui.loading = false; showError(err.message); });
     } catch (err) {
       showError(err.message);
     }
@@ -954,7 +990,11 @@ a { color: var(--green); }
     }
     if (act === 'session') { openSession(el.getAttribute('data-id')); return; }
     if (act === 'open-client') { location.hash = '#client/' + encodeURIComponent(el.getAttribute('data-id')); return; }
-    if (act === 'sync') { go('apiSyncNow', [{}]); return; }
+    if (act === 'sync') {
+      if (EXAMPLE) { go('apiSyncNow', [{}]); return; }
+      beginSync();
+      return;
+    }
     if (act === 'email') { go('apiEmailSummary', [{}]); return; }
     if (act === 'status') { go('apiSetStatus', [{ eventId: el.getAttribute('data-id'), status: el.getAttribute('data-status') }]); return; }
     if (act === 'hide') { go('apiHide', [{ eventId: el.getAttribute('data-id') }]); return; }
@@ -1022,16 +1062,19 @@ a { color: var(--green); }
       return;
     }
     if (act === 'unignore') { go('apiUnignore', [{ name: el.getAttribute('data-name') }]); return; }
+    if (act === 'retry-boot') { startApp(); return; }
   }
 
   function render() {
     var root = document.getElementById('app');
-    if (!EXAMPLE && !state && ui.fatal) {
-      root.innerHTML = '<div class="app fatal"><div><div class="brand">PT <span>Planner</span></div><p>' + esc(ui.fatal) + '</p><p class="meta">Open the link in Safari while you are signed in to the same Google account that owns the sheet. The deployment must say Execute as Me and Who has access: Only myself.</p></div></div>';
-      return;
-    }
     if (!state) {
-      root.innerHTML = '<div class="app loading"><div class="brand">PT <span>Planner</span></div></div>';
+      var splash = '<div class="app loading"><div><div class="brand"><span class="mark">PT</span> Planner</div>';
+      if (ui.fatal) {
+        splash += '<p>' + esc(ui.fatal) + '</p><button type="button" class="primary" data-act="retry-boot">Try again</button>';
+      } else {
+        splash += '<p class="meta">' + esc(ui.status || 'Opening your planner…') + '</p>';
+      }
+      root.innerHTML = splash + '</div></div>';
       return;
     }
     var r = route();
@@ -1155,28 +1198,86 @@ a { color: var(--green); }
   document.addEventListener('click', onClick);
   window.addEventListener('hashchange', function () { ui.sheet = null; render(); });
 
+  function showState(s) {
+    state = s;
+    ui.boot = readBoot();
+    render();
+  }
+  function pollSync(seen, n) {
+    if (n > 20) {
+      ui.syncing = false;
+      render();
+      return;
+    }
+    setTimeout(function () {
+      call('apiGetState', [], 15000).then(function (s) {
+        if (s && s.today) state = s;
+        if (s && s.lastSync && s.lastSync !== seen) {
+          ui.syncing = false;
+          render();
+          return;
+        }
+        render();
+        pollSync(seen, n + 1);
+      }).catch(function () { pollSync(seen, n + 1); });
+    }, 4000);
+  }
+  function beginSync() {
+    if (!state) return;
+    var seen = state.lastSync || '';
+    ui.syncing = true;
+    ui.syncError = '';
+    render();
+    var attempt = 0;
+    function run() {
+      attempt++;
+      call('apiSyncNow', [], 90000).then(function (next) {
+        if (next && next.syncing) {
+          pollSync(seen, 0);
+          return;
+        }
+        if (next && next.today) state = next;
+        ui.syncing = false;
+        render();
+      }).catch(function (err) {
+        if (attempt < 3) {
+          setTimeout(run, 4000);
+          return;
+        }
+        ui.syncing = false;
+        ui.syncError = (err && err.message) || 'Calendar check did not finish.';
+        render();
+      });
+    }
+    run();
+  }
+  function startApp() {
+    ui.fatal = '';
+    ui.syncError = '';
+    ui.syncing = false;
+    ui.status = 'Opening your planner…';
+    state = null;
+    try { render(); } catch (e) { ui.fatal = (e && e.message) || 'PT Planner could not open.'; }
+    call('apiGetState', [], 20000).then(function (s) {
+      if (!s || typeof s !== 'object' || !s.today) throw new Error('PT Planner sent an empty reply.');
+      ui.status = '';
+      showState(s);
+      beginSync();
+    }).catch(function (err) {
+      ui.syncing = false;
+      ui.fatal = (err && err.message) || 'PT Planner could not open.';
+      state = null;
+      try { render(); } catch (e2) {}
+    });
+  }
+
   if (!EXAMPLE && !(window.google && google.script && google.script.run)) {
-    document.getElementById('app').innerHTML = '<div class="app fatal"><div><div class="brand">PT <span>Planner</span></div><p>Open the Google link on your iPhone. This file is only the screen.</p><p><a href="?example=1#home">View example screens</a></p></div></div>';
+    document.getElementById('app').innerHTML = '<div class="app fatal"><div><div class="brand"><span class="mark">PT</span> Planner</div><p>Open the Google link on your iPhone. This file is only the screen.</p><p><a href="?example=1#home">View example screens</a></p></div></div>';
   } else if (EXAMPLE) {
     state = buildExample();
     render();
   } else {
-    ui.loading = true;
-    render();
-    call('apiGetState').then(function (s) {
-      state = s;
-      if (!s.lastSync) return call('apiSyncNow');
-      return s;
-    }).then(function (s) {
-      state = s;
-      ui.loading = false;
-      ui.boot = readBoot();
-      render();
-    }).catch(function (err) {
-      ui.loading = false;
-      ui.fatal = (err && err.message) || 'PT Planner could not open.';
-      render();
-    });
+    startApp();
   }
 })();
 </script>

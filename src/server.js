@@ -33,22 +33,41 @@ function dailySync() {
 }
 
 function apiGetState() {
-  return withLock_(function () {
-    assertOwner_();
-    ensureSheets_();
-    rememberTrigger_();
+  assertOwner_();
+  try {
     return publicState_();
-  });
+  } catch (err) {
+    var empty = PT.normalizeComm({});
+    empty.periods = [];
+    return {
+      today: todayDubai_(),
+      nowLabel: whenLabel_(),
+      lastSync: '',
+      triggerReady: false,
+      triggerError: '',
+      webAppUrl: '',
+      clients: [],
+      sessions: [],
+      charges: [],
+      settings: empty,
+      ignored: [],
+      syncing: false
+    };
+  }
 }
 
 function apiSyncNow() {
-  runSync_({ email: false });
-  return publicState_();
+  var result = runSync_({ email: false });
+  var state = publicState_();
+  state.syncing = !!(result && result.busy);
+  return state;
 }
 
 function apiEmailSummary() {
-  runSync_({ email: 'now' });
-  return publicState_();
+  var result = runSync_({ email: 'now' });
+  var state = publicState_();
+  state.syncing = !!(result && result.busy);
+  return state;
 }
 
 function apiSaveClient(obj) {
@@ -236,41 +255,55 @@ function apiUnignore(obj) {
 
 function runSync_(opts) {
   opts = opts || {};
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(25000)) throw new Error('PT Planner is already checking the calendar. Try again in a moment.');
+  assertOwner_();
+  var props = PropertiesService.getScriptProperties();
+  var nowMs = Date.now();
+  var until = Number(props.getProperty('syncingUntil') || '0');
+  if (until > nowMs) return { busy: true };
+  props.setProperty('syncingUntil', String(nowMs + 3 * 60 * 1000));
   try {
-    assertOwner_();
-    ensureSheets_();
     var today = todayDubai_();
-    var ctx = {
-      clients: readClients_(),
-      ignored: readIgnored_(),
-      today: today,
-      windowStart: PT.addDaysYmd(today, -400),
-      windowEnd: PT.addDaysYmd(today, 60),
-      nowStamp: nowStamp_()
-    };
-    var events = fetchEvents_(ctx.windowStart, ctx.windowEnd);
-    var result = PT.applySync(readSessionsAll_(), events, ctx);
-    writeSessions_(result.sessions);
-    writeClients_(result.clients || ctx.clients);
-    setSetting_('lastSync', whenLabel_());
-    setSetting_('triggerError', '');
-    var mail = PT.buildSummary({
-      clients: result.clients || ctx.clients,
-      sessions: result.sessions,
-      settings: phoneSettings_()
-    }, today, whenLabel_());
-    if (opts.email === 'now') {
-      deliver_(mail);
-    } else if (opts.email === 'trigger' && getSetting_('lastTriggerEmail') !== today) {
-      deliver_(mail);
-      setSetting_('lastTriggerEmail', today);
+    var periods = [];
+    try { periods = phoneSettings_().periods || []; } catch (e) { periods = []; }
+    var span = PT.syncWindow(today, periods);
+    var events = fetchEvents_(span.windowStart, span.windowEnd);
+    var sendMail = false;
+    var saved = withWriteLock_(function () {
+      ensureSheets_();
+      var ctx = {
+        clients: readClients_(),
+        ignored: readIgnored_(),
+        today: today,
+        windowStart: span.windowStart,
+        windowEnd: span.windowEnd,
+        nowStamp: nowStamp_()
+      };
+      var result = PT.applySync(readSessionsAll_(), events, ctx);
+      writeSessions_(result.sessions);
+      writeClients_(result.clients || ctx.clients);
+      var patch = { lastSync: whenLabel_(), triggerError: '' };
+      if (opts.email === 'now') sendMail = true;
+      else if (opts.email === 'trigger' && getSetting_('lastTriggerEmail') !== today) {
+        patch.lastTriggerEmail = today;
+        sendMail = true;
+      }
+      patchSettings_(patch);
+      return result;
+    });
+    if (!saved) return { busy: true };
+    if (sendMail) {
+      try {
+        deliver_(PT.buildSummary({
+          clients: saved.clients || [],
+          sessions: saved.sessions || [],
+          settings: phoneSettings_()
+        }, today, whenLabel_()));
+      } catch (e2) {}
     }
     rememberTrigger_();
-    return { checked: events.length };
+    return { busy: false, checked: events.length };
   } finally {
-    lock.releaseLock();
+    try { props.setProperty('syncingUntil', '0'); } catch (e4) {}
   }
 }
 
@@ -356,8 +389,10 @@ function assertOwner_() {
   try { active = Session.getActiveUser().getEmail() || ''; } catch (e) {}
   try { owner = Session.getEffectiveUser().getEmail() || ''; } catch (e2) {}
   if (!owner) throw new Error('PT Planner could not confirm the Google account.');
-  if (!active) throw new Error('This planner is private. Open it in Safari while you are signed in to ' + owner + '.');
-  if (active.toLowerCase() !== owner.toLowerCase()) throw new Error('This planner belongs to ' + owner + '.');
+  // Execute-as-me often leaves the active email blank, including on iPad,
+  // even for the owner. Only a different signed-in person is rejected.
+  // Who has access: Only myself already blocks everyone else.
+  if (active && active.toLowerCase() !== owner.toLowerCase()) throw new Error('This planner belongs to ' + owner + '.');
 }
 
 function fetchEvents_(startYmd, endYmd) {
@@ -657,11 +692,15 @@ function writeIgnored_(list) {
   setSetting_('ignored', JSON.stringify(list || []));
 }
 
+var settingsCache_ = null;
+
 function settingsMap_() {
+  if (settingsCache_) return settingsCache_;
   var map = {};
   readTable_('Settings').forEach(function (row) {
     if (row.key) map[String(row.key)] = row.value == null ? '' : String(row.value);
   });
+  settingsCache_ = map;
   return map;
 }
 
@@ -670,12 +709,22 @@ function getSetting_(key) {
   return map[key] == null ? '' : map[key];
 }
 
-function setSetting_(key, value) {
+function patchSettings_(pairs) {
   var map = settingsMap_();
-  map[key] = value == null ? '' : String(value);
+  var k;
+  for (k in pairs) if (Object.prototype.hasOwnProperty.call(pairs, k)) {
+    map[k] = pairs[k] == null ? '' : String(pairs[k]);
+  }
   var keys = Object.keys(map);
-  var rows = keys.map(function (k) { return { key: k, value: map[k] }; });
+  var rows = [], i;
+  for (i = 0; i < keys.length; i++) rows.push({ key: keys[i], value: map[keys[i]] });
   writeTable_('Settings', SETTING_HEADERS, rows);
+}
+
+function setSetting_(key, value) {
+  var patch = {};
+  patch[key] = value;
+  patchSettings_(patch);
 }
 
 function mapClient_(clients, id, fn) {
@@ -731,9 +780,16 @@ function whenLabel_() {
   return nowStamp_() + ' Asia/Dubai';
 }
 
+function withWriteLock_(fn) {
+  var lock = LockService.getScriptLock();
+  // A few seconds covers the sheet write. The calendar read stays outside this lock.
+  if (!lock.tryLock(4000)) return null;
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(20000)) throw new Error('PT Planner is busy. Try again in a moment.');
+  if (!lock.tryLock(8000)) throw new Error('PT Planner is busy. Try again in a moment.');
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
