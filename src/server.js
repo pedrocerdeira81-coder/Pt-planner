@@ -274,6 +274,7 @@ function runSync_(opts) {
         nowStamp: nowStamp_()
       };
       var result = PT.applySync(readSessionsAll_(), events, ctx);
+      if (result.idRemap && result.idRemap.length) writeCharges_(PT.retargetCharges(readCharges_(), result.idRemap));
       writeSessions_(result.sessions);
       writeClients_(result.clients || ctx.clients);
       var patch = { lastSync: whenLabel_(), triggerError: '' };
@@ -422,7 +423,7 @@ function fetchEvents_(startYmd, endYmd) {
       note = String(note).replace(/<[^>]+>/g, ' ');
       note = PT.collapseSpace(note);
       out.push({
-        eventId: String(ev.getId()),
+        eventId: eventKey_(ev, startTime),
         calendarId: String(cal.getId()),
         title: title,
         date: Utilities.formatDate(startTime, TZ, 'yyyy-MM-dd'),
@@ -434,6 +435,17 @@ function fetchEvents_(startYmd, endYmd) {
     }
   }
   return out;
+}
+
+// CalendarApp getId() returns the iCalUID, which is the SAME for every
+// occurrence of a recurring series. Add the occurrence start so each
+// instance gets its own session row (single events keep their plain id).
+function eventKey_(ev, startTime) {
+  var id = String(ev.getId());
+  var recurring = false;
+  try { recurring = !!(ev.isRecurringEvent && ev.isRecurringEvent()); } catch (e) { recurring = false; }
+  if (!recurring) return id;
+  return id + '@' + Utilities.formatDate(startTime, 'UTC', "yyyyMMdd'T'HHmmss'Z'");
 }
 
 function deliver_(mail) {

@@ -377,6 +377,62 @@ test('pay periods are exact dates and the current one is the period that contain
   assert.equal(ancient.windowStart, '2026-07-06');
 });
 
+test('a recurring series keeps every occurrence and replaces the old shared id', () => {
+  const series = 'larissa@google.com';
+  const nov2 = series + '@20261102T030000Z';
+  const nov4 = series + '@20261104T030000Z';
+  const larissa = client({ id: 'larissa', name: 'Larissa', packageSessions: '10', packageValue: '2000', startDate: '2026-11-01' });
+  const old = [{
+    eventId: series,
+    calendarId: 'primary',
+    title: 'Larissa PT',
+    clientName: 'Larissa',
+    date: '2026-11-02',
+    start: '07:00',
+    end: '08:00',
+    status: 'charged',
+    statusLocked: true,
+    disposition: 'kept',
+    hidden: false,
+    removed: false,
+    createdAt: '2026-11-02 05:07'
+  }];
+  const events = [
+    ev(nov2, 'Larissa PT', '2026-11-02', '', '07:00'),
+    ev(nov4, 'Larissa PT', '2026-11-04', '', '07:00')
+  ];
+  const first = PT.applySync(old, events, Object.assign({ clients: [larissa], ignored: [] }, WINDOW));
+  const live = first.sessions.filter((s) => !s.removed);
+  assert.deepEqual(live.map((s) => s.eventId).sort(), [nov2, nov4]);
+  assert.equal(live.find((s) => s.eventId === nov2).status, 'charged');
+  assert.equal(live.find((s) => s.eventId === nov2).statusLocked, true);
+  assert.equal(live.find((s) => s.eventId === nov4).status, 'normal');
+  assert.equal(first.sessions.some((s) => s.eventId === series), false);
+  assert.deepEqual(first.idRemap, [{ from: series, to: nov2 }]);
+  assert.equal(PT.packageUsed(larissa, first.sessions, larissa.packages[0], [larissa]), 2);
+  const hiddenOld = [Object.assign({}, old[0], { hidden: true, status: 'normal', statusLocked: false })];
+  const hiddenSync = PT.applySync(hiddenOld, events, Object.assign({ clients: [larissa], ignored: [] }, WINDOW));
+  assert.equal(hiddenSync.sessions.find((s) => s.eventId === nov2).hidden, true);
+  assert.equal(PT.packageUsed(larissa, hiddenSync.sessions, larissa.packages[0], [larissa]), 1);
+  const again = PT.applySync(first.sessions, events, Object.assign({ clients: [larissa], ignored: [] }, WINDOW));
+  assert.equal(again.sessions.filter((s) => !s.removed && s.clientName === 'Larissa').length, 2);
+  assert.equal(again.sessions.find((s) => s.eventId === nov2).status, 'charged');
+  const single = PT.applySync(
+    [{ eventId: 'omar@google.com', clientName: 'Omar', date: TODAY, start: '18:00', status: 'normal', disposition: 'kept' }],
+    [ev('omar@google.com', 'Omar PT', TODAY, '', '18:00')],
+    Object.assign({ clients: [client({ id: 'omar', name: 'Omar' })], ignored: [] }, WINDOW)
+  );
+  assert.equal(single.sessions.filter((s) => s.eventId === 'omar@google.com' && !s.removed).length, 1);
+  assert.equal(single.idRemap.length, 0);
+  const charges = PT.retargetCharges([
+    { id: 'ch1', clientId: 'larissa', eventId: series, type: 'late_cancel', amount: 200, date: '2026-11-02', notes: '', createdAt: '' },
+    { id: 'ch2', clientId: 'sofia', eventId: '', type: 'no_show', amount: 150, date: '2026-10-30', notes: '', createdAt: '' }
+  ], first.idRemap);
+  assert.equal(charges[0].eventId, nov2);
+  assert.equal(charges[1].eventId, '');
+  assert.equal(charges[0].amount, 200);
+});
+
 test('exact names do not let Ali take Alison', () => {
   assert.equal(PT.namesMatch('Ali', 'Alison'), false);
   assert.equal(PT.namesMatch('Jean  Pierre', 'jean pierre'), true);

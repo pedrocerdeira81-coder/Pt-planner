@@ -1117,6 +1117,37 @@ var PT = (function () {
       createdAt: stamp || ''
     };
   }
+  function occurrenceSeriesId(eventId) {
+    var id = String(eventId || '');
+    var match = id.match(/^(.*)@(\d{8}T\d{6}Z)$/);
+    if (!match || !match[2]) return '';
+    return match[1];
+  }
+  function sameOccurrenceSlot(row, ev) {
+    if (!row || !ev) return false;
+    if (String(row.date || '') !== String(ev.date || '')) return false;
+    var rowStart = row.allDay ? '' : (row.start || '');
+    var evStart = ev.allDay ? '' : (ev.start || '');
+    if (rowStart && evStart && rowStart !== evStart) return false;
+    return true;
+  }
+  function retargetCharges(charges, idRemap) {
+    var map = {}, i, ch, next, copy;
+    for (i = 0; i < (idRemap || []).length; i++) {
+      if (!idRemap[i] || !idRemap[i].from) continue;
+      map[String(idRemap[i].from)] = String(idRemap[i].to || '');
+    }
+    var out = [];
+    for (i = 0; i < (charges || []).length; i++) {
+      ch = charges[i];
+      next = map[String(ch && ch.eventId || '')];
+      if (!next) { out.push(ch); continue; }
+      copy = migrateCharge(ch);
+      copy.eventId = next;
+      out.push(copy);
+    }
+    return out;
+  }
   function applySync(prevSessions, events, ctx) {
     ctx = ctx || {};
     var clients = (ctx.clients || []).slice();
@@ -1125,7 +1156,7 @@ var PT = (function () {
       if (!list[i] || !list[i].eventId) continue;
       byId[String(list[i].eventId)] = copySession(list[i]);
     }
-    var seen = {}, added = [], unique = [], seenEv = {};
+    var seen = {}, added = [], unique = [], seenEv = {}, idRemap = [];
     var incoming = events || [];
     for (i = 0; i < incoming.length; i++) {
       var ev = incoming[i];
@@ -1140,6 +1171,17 @@ var PT = (function () {
       var parsed = parseTitle(ev.title);
       if (!parsed.key || parsed.key === 'pt' || parsed.key.length < 2) continue;
       var prev = byId[id];
+      if (!prev) {
+        var seriesId = occurrenceSeriesId(id);
+        var legacy = seriesId && byId[seriesId];
+        if (legacy && sameOccurrenceSlot(legacy, ev)) {
+          delete byId[seriesId];
+          legacy.eventId = id;
+          byId[id] = legacy;
+          prev = legacy;
+          idRemap.push({ from: seriesId, to: id });
+        }
+      }
       if (parsed.free && !parsed.explicit) {
         if (isIgnoredName(ctx.ignored, parsed.key)) {
           if (prev) {
@@ -1230,14 +1272,25 @@ var PT = (function () {
     for (k in byId) if (Object.prototype.hasOwnProperty.call(byId, k)) ids.push(k);
     for (i = 0; i < ids.length; i++) {
       var s = byId[ids[i]];
-      if (seen[s.eventId]) continue;
+      if (!s || seen[s.eventId]) continue;
+      var superseded = false, seenId;
+      for (seenId in seen) {
+        if (Object.prototype.hasOwnProperty.call(seen, seenId) && occurrenceSeriesId(seenId) === String(s.eventId)) {
+          superseded = true;
+          break;
+        }
+      }
+      if (superseded && start && end && s.date >= start && s.date <= end) {
+        delete byId[s.eventId];
+        continue;
+      }
       if (start && end && s.date >= start && s.date <= end) s.removed = true;
     }
     var sessions = [];
-    for (i = 0; i < ids.length; i++) sessions.push(byId[ids[i]]);
+    for (i = 0; i < ids.length; i++) if (byId[ids[i]]) sessions.push(byId[ids[i]]);
     sessions.sort(compareSessions);
     added.sort(compareSessions);
-    return { sessions: sessions, added: added, clients: clients };
+    return { sessions: sessions, added: added, clients: clients, idRemap: idRemap };
   }
   function summaryAdded(sessions, today) {
     var cutoff = addDaysYmd(today, -1);
@@ -1548,6 +1601,7 @@ var PT = (function () {
     guessStatus: guessStatus,
     isFlaggedNote: isFlaggedNote,
     applySync: applySync,
+    retargetCharges: retargetCharges,
     summaryAdded: summaryAdded,
     olderSavedToday: olderSavedToday,
     lowClients: lowClients,

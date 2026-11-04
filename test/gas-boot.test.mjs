@@ -60,7 +60,8 @@ function makeSheet() {
   return sheet;
 }
 
-function loadGas() {
+function loadGas(opts) {
+  opts = opts || {};
   var book = { Sheet1: makeSheet() };
   var triggers = [];
   var props = {};
@@ -93,12 +94,13 @@ function loadGas() {
   };
   context.Utilities = {
     formatDate: function (date, tz, fmt) {
-      var t = dubai(date);
+      var t = tz === 'UTC' ? new Date(date.getTime()) : dubai(date);
       var y = t.getUTCFullYear(), m = pad(t.getUTCMonth() + 1), d = pad(t.getUTCDate());
       var h = pad(t.getUTCHours()), min = pad(t.getUTCMinutes());
       if (fmt === 'yyyy-MM-dd') return y + '-' + m + '-' + d;
       if (fmt === 'HH:mm') return h + ':' + min;
       if (fmt === 'yyyy-MM-dd HH:mm') return y + '-' + m + '-' + d + ' ' + h + ':' + min;
+      if (fmt === "yyyyMMdd'T'HHmmss'Z'") return y + m + d + 'T' + h + min + pad(t.getUTCSeconds()) + 'Z';
       throw new Error('format ' + fmt);
     },
     parseDate: function (str) {
@@ -155,7 +157,7 @@ function loadGas() {
       };
     }
   };
-  function event(id, title, when) {
+  function event(id, title, when, recurring) {
     return {
       getId: function () { return id; },
       getTitle: function () { return title; },
@@ -163,6 +165,7 @@ function loadGas() {
       getEndTime: function () { return new Date(when.getTime() + 60 * 60 * 1000); },
       getDescription: function () { return 'Charged'; },
       isAllDayEvent: function () { return false; },
+      isRecurringEvent: function () { return !!recurring; },
       getMyStatus: function () { return 'YES'; },
       getEventType: function () { return 'DEFAULT'; }
     };
@@ -182,7 +185,9 @@ function loadGas() {
         event('e4', 'Resumo', now),
         event('e5', 'Lunch', now),
         event('e6', 'Ancient PT', ancient)
-      ];
+      ].concat((opts.extra || []).map(function (item) {
+        return event(item.id, item.title, item.when, item.recurring);
+      }));
       return [{
         isOwnedByMe: function () { return true; },
         getId: function () { return 'primary'; },
@@ -228,6 +233,31 @@ test('first open works when the active email is blank, and PT titles become clie
   const page = gas.doGet();
   assert.match(page.getContent(), /id="app"/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'apps-script/Code.gs'), 'utf8'), /\.apply\(runner/);
+});
+
+test('recurring occurrences keep separate ids and a later sync does not duplicate them', () => {
+  const nov2 = new Date(Date.UTC(2026, 10, 2, 3, 0, 0));
+  const nov4 = new Date(Date.UTC(2026, 10, 4, 3, 0, 0));
+  const gas = loadGas({
+    extra: [
+      { id: 'larissa@google.com', title: 'Larissa PT', when: nov2, recurring: true },
+      { id: 'larissa@google.com', title: 'Larissa PT', when: nov4, recurring: true }
+    ]
+  });
+  const synced = gas.apiSyncNow();
+  const larissa = synced.sessions.filter((s) => String(s.clientName) === 'Larissa' && !s.removed);
+  const ids = larissa.map((s) => String(s.eventId)).sort();
+  assert.equal(ids.join(','), [
+    'larissa@google.com@20261102T030000Z',
+    'larissa@google.com@20261104T030000Z'
+  ].join(','));
+  const kept = gas.PT.setStatus(synced.sessions, ids[0], 'charged');
+  const hidden = gas.PT.hideSession(kept, ids[1]);
+  assert.equal(hidden.find((s) => String(s.eventId) === ids[0]).status, 'charged');
+  assert.equal(hidden.find((s) => String(s.eventId) === ids[1]).hidden, true);
+  const again = gas.apiSyncNow();
+  const second = again.sessions.filter((s) => String(s.clientName) === 'Larissa' && !s.removed);
+  assert.equal(second.length, 2);
 });
 
 function browser() {
