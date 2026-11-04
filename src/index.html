@@ -565,7 +565,6 @@ a { color: var(--green); }
     var todays = (state.sessions || []).filter(function (s) {
       return s.date === today && s.disposition === 'kept';
     }).sort(PT.compareSessions);
-    var unmatched = PT.unmatchedFromSessions(state.sessions, state.clients);
     var attention = (state.clients || []).filter(function (c) {
       var st = PT.currentRemaining(c, state.sessions, state.clients);
       return st.ready && (st.low || st.out);
@@ -577,9 +576,6 @@ a { color: var(--green); }
     lead += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
     lead += payStats(pay);
     lead += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
-    if (unmatched.length) {
-      lead += '<button type="button" class="row" data-act="nav" data-go="#review"><div class="grow"><div class="name">' + unmatched.length + (unmatched.length === 1 ? ' name to sort' : ' names to sort') + '</div><div class="note">Only names without PT. PT names are added for you.</div></div></button>';
-    }
     var todayCount = todays.filter(function (s) { return s.status !== 'free'; }).length;
     var todayBlock = '<h2>Today <span class="meta">' + todayCount + '</span></h2>';
     if (!todays.length) todayBlock += '<div class="card empty">Nothing on the calendar today.</div>';
@@ -599,7 +595,7 @@ a { color: var(--green); }
     var rest = (state.clients || []).slice().sort(function (a, b) {
       return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
     });
-    if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title contains PT.</div>';
+    if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title ends in PT.</div>';
     else {
       body += '<div class="client-grid">';
       rest.forEach(function (c) { body += clientButton(c); });
@@ -734,29 +730,6 @@ a { color: var(--green); }
       body += '</div>';
     }
     return shell('Charges', body, '#report');
-  }
-
-  function reviewScreen() {
-    var items = PT.unmatchedFromSessions(state.sessions, state.clients);
-    var body = '<p class="meta">These titles do not contain PT. A title with PT, such as Omar PT, is added as a client on its own.</p>';
-    if (!items.length) body += '<div class="card empty">Every calendar name is matched.</div>';
-    items.forEach(function (item) {
-      var options = '<option value="">Choose a client</option>' + (state.clients || []).map(function (c) {
-        return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>';
-      }).join('');
-      var sample = (state.sessions || []).filter(function (s) { return PT.normName(s.clientName) === item.key && s.note; })[0];
-      body += '<div class="card" data-name="' + esc(item.label) + '"><div class="name">' + esc(item.label) + '</div>' +
-        '<div class="meta" style="margin:4px 0 8px">' + item.count + (item.count === 1 ? ' session' : ' sessions') + (item.ambiguous ? ' · this name matches more than one client' : '') + '</div>' +
-        (sample ? '<div class="note" style="margin-bottom:8px">' + esc(sample.note) + '</div>' : '') +
-        '<select data-field="link">' + options + '</select>' +
-        '<button type="button" class="primary" data-act="link" data-name="' + esc(item.label) + '">Match to this client</button>' +
-        '<label>Sessions in a new package</label><input data-field="sessions" inputmode="numeric" placeholder="12">' +
-        '<label>Package price (AED)</label><input data-field="value" inputmode="decimal" placeholder="4800">' +
-        '<label>Package starts</label><input data-field="start" type="date" value="' + esc(state.today) + '">' +
-        '<button type="button" class="ghost" data-act="create-name" data-name="' + esc(item.label) + '">Save as a new client</button>' +
-        '<button type="button" class="danger" data-act="ignore" data-name="' + esc(item.label) + '">Ignore this name</button></div>';
-    });
-    return shell('Names', body, '#home');
   }
 
   function tierRows(tiers) {
@@ -1131,25 +1104,6 @@ a { color: var(--green); }
       return;
     }
     if (act === 'delete-charge') { go('apiDeleteCharge', [{ id: el.getAttribute('data-id') }]); return; }
-    if (act === 'link' || act === 'ignore' || act === 'create-name') {
-      var card = el.closest('.card');
-      var name = el.getAttribute('data-name');
-      if (act === 'ignore') { go('apiMap', [{ action: 'ignore', name: name }]); return; }
-      if (act === 'link') {
-        var clientId = field('link', card);
-        if (!clientId) { showError('Choose a client.'); return; }
-        go('apiMap', [{ action: 'link', name: name, clientId: clientId }]);
-        return;
-      }
-      go('apiMap', [{
-        action: 'create',
-        name: name,
-        sessions: field('sessions', card),
-        value: field('value', card),
-        startDate: field('start', card) || state.today
-      }]);
-      return;
-    }
     if (act === 'add-tier' || act === 'remove-tier') {
       var edited = readTierInputs(el.closest('.sheet') || document);
       if (act === 'add-tier') edited.push({ from: '', rate: '' });
@@ -1192,7 +1146,6 @@ a { color: var(--green); }
     else if (r.name === 'client') html = clientScreen(r.id);
     else if (r.name === 'report') html = reportScreen();
     else if (r.name === 'charges') html = chargesScreen();
-    else if (r.name === 'review') html = reviewScreen();
     else if (r.name === 'settings') html = settingsScreen();
     else html = homeScreen();
     root.innerHTML = html;
@@ -1254,7 +1207,7 @@ a { color: var(--green); }
       statusLocked: false, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
     });
     sessions.push({
-      eventId: 'jeremy-today', calendarId: 'example', title: 'Jeremy Pt free', clientName: 'Jeremy',
+      eventId: 'jeremy-today', calendarId: 'example', title: 'Jeremy free Pt', clientName: 'Jeremy',
       date: '2026-11-02', start: '09:00', end: '10:00', allDay: false, note: 'Free pra compensar outras sessoes',
       status: 'free', statusLocked: true, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
     });
@@ -1267,11 +1220,6 @@ a { color: var(--green); }
       eventId: 'sofia-tomorrow', calendarId: 'example', title: 'Sofia PT', clientName: 'Sofia',
       date: '2026-11-03', start: '08:30', end: '09:30', allDay: false, note: '', status: 'normal',
       statusLocked: false, disposition: 'kept', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
-    });
-    sessions.push({
-      eventId: 'aurelie-today', calendarId: 'example', title: 'Aurelie', clientName: 'Aurelie',
-      date: '2026-11-02', start: '16:00', end: '17:00', allDay: false, note: 'Nao tem sessoes',
-      status: 'normal', statusLocked: false, disposition: 'pending', hidden: false, removed: false, createdAt: '2026-11-02 05:04'
     });
     return {
       today: '2026-11-02',

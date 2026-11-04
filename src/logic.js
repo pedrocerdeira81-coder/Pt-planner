@@ -654,11 +654,10 @@ var PT = (function () {
     return /\bfree\b/i.test(collapseSpace(title));
   }
   function parseTitle(title) {
-    var trimmed = collapseSpace(title).replace(/[.。]+$/g, '').trim();
-    var free = titleHasFree(trimmed);
-    if (!trimmed) return { display: '', key: '', explicit: false, free: false };
-    if (!/\bpt\b/i.test(trimmed)) return { display: trimmed, key: normName(trimmed), explicit: false, free: free };
-    var display = collapseSpace(trimmed.replace(/\bpt\b/ig, ' ').replace(/\bfree\b/ig, ' ')).replace(/^[-–—|:,]+|[-–—|:,]+$/g, '').trim();
+    var trimmed = collapseSpace(title).replace(/[\s.。,!?;:'"’”‘…)\]}…\-–—|]+$/g, '').trim();
+    var free = titleHasFree(title);
+    if (!trimmed || !/\bpt$/i.test(trimmed)) return { display: '', key: '', explicit: false, free: free };
+    var display = collapseSpace(trimmed.replace(/\s*\bpt$/i, ' ')).replace(/^[-–—|:,.\s]+|[-–—|:,.\s]+$/g, '').trim();
     display = collapseSpace(display);
     if (!display) return { display: '', key: '', explicit: true, free: free };
     return { display: display, key: normName(display), explicit: true, free: free };
@@ -797,8 +796,12 @@ var PT = (function () {
     for (i = 0; i < unique.length; i++) {
       ev = unique[i];
       var id = String(ev.eventId);
-      seen[id] = true;
       var parsed = parseTitle(ev.title);
+      if (!parsed.explicit) {
+        if (byId[id]) delete byId[id];
+        continue;
+      }
+      seen[id] = true;
       if (!parsed.key || parsed.key === 'pt' || parsed.key.length < 2) continue;
       var prev = byId[id];
       if (!prev) {
@@ -812,39 +815,6 @@ var PT = (function () {
           idRemap.push({ from: seriesId, to: id });
         }
       }
-      if (parsed.free && !parsed.explicit) {
-        if (isIgnoredName(ctx.ignored, parsed.key)) {
-          if (prev) {
-            prev.disposition = 'ignored';
-            prev.title = ev.title || prev.title;
-            prev.date = ev.date || prev.date;
-            prev.note = collapseSpace(ev.note || '');
-            prev.status = 'free';
-            prev.removed = false;
-          }
-          continue;
-        }
-        if (!prev) {
-          var freeRow = blankSession(ev, parsed, ctx.nowStamp || '');
-          freeRow.disposition = 'kept';
-          freeRow.status = 'free';
-          byId[id] = freeRow;
-          continue;
-        }
-        prev.title = ev.title || prev.title;
-        prev.clientName = parsed.display;
-        prev.date = ev.date || prev.date;
-        prev.start = ev.allDay ? '' : (ev.start || '');
-        prev.end = ev.allDay ? '' : (ev.end || '');
-        prev.allDay = !!ev.allDay;
-        prev.note = collapseSpace(ev.note || '');
-        prev.calendarId = ev.calendarId || prev.calendarId;
-        prev.removed = false;
-        prev.status = 'free';
-        if (!prev.hidden) prev.disposition = 'kept';
-        continue;
-      }
-      if (!parsed.explicit && isBuiltinIgnore(parsed.key)) continue;
       if (isIgnoredName(ctx.ignored, parsed.key)) {
         if (prev) {
           prev.disposition = 'ignored';
@@ -856,23 +826,15 @@ var PT = (function () {
         continue;
       }
       var hits = clientsForName(clients, parsed.display);
-      var explicit = parsed.explicit;
-      var nameLike = looksLikeClientName(parsed.display) && !isStoplist(parsed.key);
       var disposition = 'pending';
-      if (explicit) {
-        if (hits.length > 1) disposition = 'pending';
-        else {
-          if (!hits.length) {
-            var made = blankAutoClient(parsed.display, ctx.today || '');
-            clients = clients.concat([made]);
-            hits = [made];
-          }
-          disposition = 'kept';
+      if (hits.length > 1) disposition = 'pending';
+      else {
+        if (!hits.length) {
+          var made = blankAutoClient(parsed.display, ctx.today || '');
+          clients = clients.concat([made]);
+          hits = [made];
         }
-      } else {
-        if (hits.length === 0 && !nameLike) continue;
-        if (hits.length === 0 && isStoplist(parsed.key)) continue;
-        disposition = hits.length === 1 ? 'kept' : 'pending';
+        disposition = 'kept';
       }
       if (!prev) {
         var row = blankSession(ev, parsed, ctx.nowStamp || '');
@@ -900,6 +862,9 @@ var PT = (function () {
     var end = ctx.windowEnd || '';
     var ids = [], k;
     for (k in byId) if (Object.prototype.hasOwnProperty.call(byId, k)) ids.push(k);
+    for (i = 0; i < ids.length; i++) {
+      if (!parseTitle(byId[ids[i]] && byId[ids[i]].title).explicit) delete byId[ids[i]];
+    }
     for (i = 0; i < ids.length; i++) {
       var s = byId[ids[i]];
       if (!s || seen[s.eventId]) continue;
@@ -964,7 +929,8 @@ var PT = (function () {
     var out = [], list = sessions || [], i, s;
     for (i = 0; i < list.length; i++) {
       s = list[i];
-      if (!s || isYes(s.removed) || isYes(s.hidden) || s.disposition === 'ignored') continue;
+      if (!s || isYes(s.removed) || isYes(s.hidden) || s.disposition !== 'kept') continue;
+      if (!parseTitle(s.title).explicit && s.title) continue;
       if (!s.date || s.date < today || s.date > end) continue;
       if (s.status === 'free' || s.status === 'charged' || isFlaggedNote(s.note)) out.push(s);
     }
@@ -1030,13 +996,6 @@ var PT = (function () {
     var flagged = report.flagged || [];
     lines.push('Flagged notes: ' + flagged.length);
     pushCapped(lines, flagged, emailLine);
-    lines.push('');
-    var unmatched = report.unmatched || [];
-    lines.push('Unmatched names: ' + unmatched.length);
-    pushCapped(lines, unmatched, function (u) {
-      var noun = u.count === 1 ? ' session' : ' sessions';
-      return u.label + ' | ' + u.count + noun + (u.ambiguous ? ' | needs a choice' : '');
-    });
     return { subject: EMAIL_SUBJECT, to: SUMMARY_EMAIL, body: lines.join('\n') };
   }
   function buildSummary(state, today, whenLabel) {
@@ -1051,8 +1010,7 @@ var PT = (function () {
       added: summaryAdded(sessions, today),
       olderSaved: olderSavedToday(sessions, today),
       low: lowClients(clients, sessions),
-      flagged: flaggedSoon(sessions, today),
-      unmatched: unmatchedFromSessions(sessions, clients)
+      flagged: flaggedSoon(sessions, today)
     });
   }
   function linkName(clients, sessions, clientId, aliasLabel) {

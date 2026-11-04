@@ -228,7 +228,7 @@ test('first open works when the active email is blank, and PT titles become clie
   assert.equal(gas.PT.packageUsed(sara, synced.sessions, sara.packages[0], synced.clients), 0);
   const omar = synced.clients.find((c) => c.name === 'Omar');
   assert.equal(omar.startDate, synced.today);
-  assert.equal(synced.sessions.filter((s) => s.clientName === 'Aurelie' && s.disposition === 'pending').length, 1);
+  assert.equal(synced.sessions.filter((s) => String(s.clientName) === 'Aurelie').length, 0);
   assert.equal(gas.emails.length, 0);
   const page = gas.doGet();
   assert.match(page.getContent(), /id="app"/);

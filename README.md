@@ -1,6 +1,6 @@
 # PT Planner
 
-Pedro’s sessions come from his Google Calendar. A title with **PT** in it, such as `Omar PT` or `Jeremy Pt`, becomes a client on its own. A title that contains the word **free**, such as `PT Omar free` or `Free session`, still shows on the day, marked Free, and is left out of every count. Clients, packages, and pay periods stay in a private Google Sheet on his account. Nothing about a client is stored on this public website.
+Pedro’s sessions come from his Google Calendar. Only a title that **ends in PT**, such as `Omar PT` or `Jeremy Pt`, becomes a client. Shifts and personal events are left out. A PT title that contains the word **free**, such as `Omar free PT`, still shows on the day, marked Free, and is left out of every count. Clients, packages, and pay periods stay in a private Google Sheet on his account. Nothing about a client is stored on this public website.
 
 The old page is still at the same address. This planner is a separate link he puts on his iPhone.
 
@@ -87,14 +87,14 @@ The 5:00 check turns on when that page opens. You do not set an alarm.
 
 ### Fill in each package
 
-A calendar title with PT creates the client. The package starts today, so older sessions do not use it up.
+A calendar title that ends in PT creates the client. The package starts today, so older sessions do not use it up.
 
 48. Tap a client that says **Set package**, or tap **Clients**, then the person.
 49. Tap **Fix numbers** (it may say that on the client page).
 50. Enter the package size, how many are left, the package value in AED, and the start date.
 51. Tap **Save**.
 
-Names without PT, such as a bare first name, stay under **name to sort**. Match them, save them as a client, or tap **Ignore this name**. **Resumo** and **New month** are already skipped.
+Anything that does not end in PT, such as a shift or `O pai morreu`, is skipped. It is not listed, and it is not in the morning email.
 
 ### Check the morning email
 
@@ -136,8 +136,6 @@ These are example clients, not Pedro’s. The sample period is 29 Oct to 29 Nov.
 ![Example pay-period report](docs/screenshots/05-report.png)
 
 ![Example charges in the pay period](docs/screenshots/06-charges.png)
-
-![A name without PT, still to sort](docs/screenshots/07-names.png)
 
 ![Commission tiers in settings](docs/screenshots/08-settings.png)
 

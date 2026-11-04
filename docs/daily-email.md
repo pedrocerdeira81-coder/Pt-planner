@@ -28,20 +28,17 @@ Flagged notes: 2
 - Jeremy | 2026-11-02 09:00 | free | Free pra compensar outras sessoes
 - Mohammad family | 2026-11-02 18:00 | charged | Charged, give back friday
 
-Unmatched names: 1
-- Aurelie | 1 session
 ```
 
 - The first line is always `PT Planner daily sync`.
 - The second line is `Status: ok` or `Status: failed`.
 - `When:` is Dubai time.
 - `Period:` is the gym pay period that contains that morning, for example `2026-09-30 to 2026-10-28`. It is not a calendar month. The line is omitted if he has not saved a period yet.
-- `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. Free sessions are left out of that count, including a title that contains the word free, such as `PT Omar free` or `Free session`. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
+- `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. Only titles that end in PT are sessions. A title that contains the word free, such as `Omar free PT`, is left out of that count. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
 - An empty section is `- None`.
 - A line is `Name | date time | normal|free|charged | note`.
 - Low means 1 or 2 sessions left. Out means 0 or fewer. Free sessions do not use up a package. Normal and charged do.
-- Flagged notes are free, charged, or a calendar note such as Charged, free, or “Nao tem sessoes”, for today and the next 7 days.
-- Unmatched names still need a tap in the app. They repeat each morning until they are matched or ignored.
+- Flagged notes are free, charged, or a calendar note such as Charged, free, or “Nao tem sessoes”, for today and the next 7 days. Events that do not end in PT are not listed.
 - Lists stop after 30 lines and then say `and N more`.
 
 ## When it failed

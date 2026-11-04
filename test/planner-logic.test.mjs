@@ -32,30 +32,48 @@ function ev(id, title, date, note, start) {
 test('calendar titles keep the client and drop a trailing PT', () => {
   assert.deepEqual(PT.parseTitle('Larissa PT'), { display: 'Larissa', key: 'larissa', explicit: true, free: false });
   assert.deepEqual(PT.parseTitle('Jeremy Pt '), { display: 'Jeremy', key: 'jeremy', explicit: true, free: false });
+  assert.deepEqual(PT.parseTitle('Jeremy Pt.'), { display: 'Jeremy', key: 'jeremy', explicit: true, free: false });
   assert.deepEqual(PT.parseTitle('Mohammad family PT'), { display: 'Mohammad family', key: 'mohammad family', explicit: true, free: false });
-  assert.deepEqual(PT.parseTitle('  aurelie '), { display: 'aurelie', key: 'aurelie', explicit: false, free: false });
+  assert.equal(PT.parseTitle('  aurelie ').explicit, false);
+  assert.equal(PT.parseTitle('O pai morreu').explicit, false);
+  assert.equal(PT.parseTitle('PT Omar').explicit, false);
+  assert.equal(PT.parseTitle('script').explicit, false);
   assert.equal(PT.parseTitle('Larissa - PT').explicit, true);
   assert.equal(PT.parseTitle('Larissa - PT').display, 'Larissa');
   assert.equal(PT.parseTitle('Freedom PT').free, false);
   assert.equal(PT.parseTitle('Freedom PT').display, 'Freedom');
+  assert.equal(PT.parseTitle('Larissa free PT').free, true);
+  assert.equal(PT.parseTitle('Larissa free PT').display, 'Larissa free');
 });
 
-test('Resumo and New month are ignored, a bare client name is not', () => {
+test('only a title that ends in PT is kept, and stored non-PT rows are cleared', () => {
   const clients = [client()];
-  const result = PT.applySync([], [
+  const stored = [{
+    eventId: 'old',
+    title: 'O pai morreu',
+    clientName: 'O pai morreu',
+    date: '2026-08-01',
+    start: '09:00',
+    status: 'normal',
+    disposition: 'pending',
+    hidden: false,
+    removed: false
+  }];
+  const result = PT.applySync(stored, [
     ev('1', 'Resumo', TODAY),
     ev('2', 'New month', TODAY),
-    ev('3', 'New  month', TODAY),
+    ev('3', 'O pai morreu', TODAY),
     ev('4', 'Larissa PT', TODAY),
     ev('5', 'Aurelie ', TODAY, 'Nao tem sessoes'),
     ev('6', 'Lunch', TODAY),
-    ev('7', 'Dentist', TODAY)
+    ev('7', 'PT Omar', TODAY),
+    ev('8', 'Jeremy Pt.', '2026-11-03')
   ], Object.assign({ clients: clients, ignored: [] }, WINDOW));
   const names = result.sessions.filter((s) => !s.removed).map((s) => s.clientName).sort();
-  assert.deepEqual(names, ['Aurelie', 'Larissa']);
-  assert.equal(result.sessions.find((s) => s.clientName === 'Larissa').disposition, 'kept');
-  assert.equal(result.sessions.find((s) => s.clientName === 'Aurelie').disposition, 'pending');
-  assert.equal(result.added.length, 1);
+  assert.deepEqual(names, ['Jeremy', 'Larissa']);
+  assert.equal(result.sessions.some((s) => s.eventId === 'old' || s.title === 'O pai morreu'), false);
+  assert.equal(result.added.length, 2);
+  assert.equal(result.clients.map((c) => c.name).sort().join(','), 'Jeremy,Larissa');
 });
 
 test('the same calendar event is never added twice', () => {
@@ -94,27 +112,20 @@ test('free sessions do not use the package and charged sessions do', () => {
   assert.equal(again.sessions.find((s) => s.eventId === 'f').status, 'normal');
 });
 
-test('an unknown name can be linked once and then counts', () => {
+test('a name that does not end in PT is never stored', () => {
   const sofia = client({ id: 'sofia', name: 'Sofia', packageSessions: '8', packageValue: '3200', startDate: '2026-11-01' });
   const synced = PT.applySync([], [ev('a', 'Aurelie ', TODAY)], Object.assign({ clients: [sofia], ignored: [] }, WINDOW));
-  assert.equal(PT.unmatchedFromSessions(synced.sessions, [sofia])[0].label, 'Aurelie');
-  const linked = PT.linkName(synced.sessions && [sofia], synced.sessions, 'sofia', 'Aurelie');
-  assert.deepEqual(linked.clients[0].aliases, ['Aurelie']);
-  assert.equal(linked.sessions[0].disposition, 'kept');
-  assert.equal(PT.currentRemaining(linked.clients[0], linked.sessions, linked.clients).used, 1);
-  assert.equal(PT.unmatchedFromSessions(linked.sessions, linked.clients).length, 0);
-  const next = PT.applySync(linked.sessions, [ev('b', 'Aurelie', '2026-11-04')], Object.assign({ clients: linked.clients, ignored: [] }, WINDOW));
-  assert.equal(next.sessions.filter((s) => s.clientName === 'Aurelie' && s.disposition === 'kept').length, 2);
+  assert.equal(synced.sessions.length, 0);
+  assert.equal(PT.unmatchedFromSessions(synced.sessions, [sofia]).length, 0);
 });
 
-test('ignore hides a name from later checks', () => {
-  const synced = PT.applySync([], [ev('a', 'Lunch', TODAY), ev('z', 'Resumo', TODAY)], Object.assign({ clients: [], ignored: [] }, WINDOW));
-  assert.equal(synced.sessions.length, 0);
-  const named = PT.applySync([], [ev('a', 'Samir', TODAY)], Object.assign({ clients: [], ignored: [] }, WINDOW));
+test('a deleted client name stays ignored when the title still ends in PT', () => {
+  const named = PT.applySync([], [ev('a', 'Samir PT', TODAY)], Object.assign({ clients: [], ignored: [] }, WINDOW));
+  assert.equal(named.clients[0].name, 'Samir');
   const ignored = PT.ignoreName([], named.sessions, 'Samir');
-  const again = PT.applySync(ignored.sessions, [ev('a', 'Samir', TODAY), ev('b', 'Samir', '2026-11-05')], Object.assign({ clients: [], ignored: ignored.ignored }, WINDOW));
-  assert.equal(PT.unmatchedFromSessions(again.sessions, []).length, 0);
-  assert.equal(again.sessions.filter((s) => s.disposition === 'pending').length, 0);
+  const again = PT.applySync(ignored.sessions, [ev('a', 'Samir PT', TODAY), ev('b', 'Samir PT', '2026-11-05')], Object.assign({ clients: [], ignored: ignored.ignored }, WINDOW));
+  assert.equal(again.sessions.filter((s) => s.disposition === 'kept').length, 0);
+  assert.equal(again.clients.length, 0);
 });
 
 test('two clients with the same name are not both charged for one session', () => {
@@ -123,7 +134,7 @@ test('two clients with the same name are not both charged for one session', () =
   const synced = PT.applySync([], [ev('a', 'Ali PT', TODAY)], Object.assign({ clients: [a, b], ignored: [] }, WINDOW));
   assert.equal(synced.sessions[0].disposition, 'pending');
   assert.equal(PT.packageUsed(a, synced.sessions, a.packages[0], [a, b]), 0);
-  assert.equal(PT.unmatchedFromSessions(synced.sessions, [a, b])[0].ambiguous, true);
+  assert.equal(PT.periodBillable([a, b], synced.sessions, { start: '2026-11-01', end: '2026-11-30' }, TODAY).length, 0);
 });
 
 test('renewal keeps the old package and new sessions start after it', () => {
@@ -221,9 +232,9 @@ test('daily email has the fixed subject and the four sections', () => {
   assert.match(mail.body, /Older sessions saved: 1/);
   assert.match(mail.body, /Clients low or out: 1/);
   assert.match(mail.body, /Jeremy \| 2 left \| low/);
-  assert.match(mail.body, /Flagged notes: 2/);
-  assert.match(mail.body, /Unmatched names: 1/);
-  assert.match(mail.body, /Aurelie \| 1 session/);
+  assert.match(mail.body, /Flagged notes: 1/);
+  assert.doesNotMatch(mail.body, /Unmatched names/);
+  assert.doesNotMatch(mail.body, /Aurelie/);
   const failed = PT.buildDailyEmail({ ok: false, when: '2026-11-02 05:07 Asia/Dubai', error: 'Calendar is off' });
   assert.equal(failed.subject, 'PT Planner daily sync');
   assert.match(failed.body, /Status: failed/);
@@ -276,7 +287,7 @@ test('a PT title becomes a client and older sessions stay outside a fresh packag
   const result = PT.applySync([], [
     ev('old', 'Omar PT', '2026-08-01', '', '07:00'),
     ev('today', 'Omar PT', TODAY, '', '18:00'),
-    ev('mid', 'PT Omar', '2026-11-04', '', '09:00')
+    ev('mid', 'Omar PT', '2026-11-04', '', '09:00')
   ], Object.assign({ clients: [], ignored: [], today: TODAY }, WINDOW));
   assert.equal(result.clients.length, 1);
   assert.equal(result.clients[0].name, 'Omar');
@@ -286,7 +297,7 @@ test('a PT title becomes a client and older sessions stay outside a fresh packag
   const again = PT.applySync(result.sessions, [
     ev('old', 'Omar PT', '2026-08-01'),
     ev('today', 'Omar PT', TODAY),
-    ev('mid', 'PT Omar', '2026-11-04')
+    ev('mid', 'Omar PT', '2026-11-04')
   ], Object.assign({ clients: result.clients, ignored: [], today: TODAY }, WINDOW));
   assert.equal(again.clients.length, 1);
   const saved = PT.saveClientPackage(result.clients[0], {
@@ -303,25 +314,22 @@ test('a PT title becomes a client and older sessions stay outside a fresh packag
   assert.equal(saved.packages[0].paymentStatus, undefined);
 });
 
-test('a title containing free is not counted, even on a later sync', () => {
+test('a title containing free is not counted, and a title that does not end in PT is dropped', () => {
   const result = PT.applySync([], [
-    ev('omar', 'PT Omar free', TODAY, '', '09:00'),
+    ev('omar', 'Omar free PT', TODAY, '', '09:00'),
     ev('plain', 'Free session', TODAY, '', '10:00'),
-    ev('word', 'Freedom PT', TODAY, '', '11:00')
+    ev('word', 'Freedom PT', TODAY, '', '11:00'),
+    ev('shift', 'O pai morreu', TODAY, '', '12:00')
   ], Object.assign({ clients: [], ignored: [], today: TODAY }, WINDOW));
-  assert.deepEqual(result.clients.map((c) => c.name).sort(), ['Freedom', 'Omar']);
+  assert.deepEqual(result.clients.map((c) => c.name).sort(), ['Freedom', 'Omar free']);
   const omar = result.sessions.find((s) => s.eventId === 'omar');
-  const plain = result.sessions.find((s) => s.eventId === 'plain');
-  assert.equal(omar.clientName, 'Omar');
+  assert.equal(result.sessions.some((s) => s.eventId === 'plain' || s.eventId === 'shift'), false);
+  assert.equal(omar.clientName, 'Omar free');
   assert.equal(omar.status, 'free');
   assert.equal(omar.disposition, 'kept');
-  assert.equal(plain.clientName, 'Free session');
-  assert.equal(plain.status, 'free');
-  assert.equal(plain.disposition, 'kept');
-  assert.equal(PT.unmatchedFromSessions(result.sessions, result.clients).length, 0);
   const period = { start: '2026-10-29', end: '2026-11-29' };
   let clients = result.clients.map((c) => {
-    if (c.name === 'Omar') {
+    if (c.name === 'Omar free') {
       return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '8', value: '4000', startDate: '2026-11-01' }, result.sessions, result.clients);
     }
     if (c.name === 'Freedom') {
@@ -329,7 +337,7 @@ test('a title containing free is not counted, even on a later sync', () => {
     }
     return c;
   });
-  const omarClient = clients.find((c) => c.name === 'Omar');
+  const omarClient = clients.find((c) => c.name === 'Omar free');
   assert.equal(PT.currentRemaining(omarClient, result.sessions, clients).used, 0);
   assert.equal(PT.currentRemaining(omarClient, result.sessions, clients).remaining, 8);
   assert.equal(PT.periodBillable(clients, result.sessions, period, TODAY).length, 1);
@@ -337,12 +345,12 @@ test('a title containing free is not counted, even on a later sync', () => {
   const locked = PT.setStatus(result.sessions, 'omar', 'normal');
   assert.equal(locked.find((s) => s.eventId === 'omar').statusLocked, true);
   const again = PT.applySync(locked, [
-    ev('omar', 'PT Omar free', TODAY, '', '09:00'),
+    ev('omar', 'Omar free PT', TODAY, '', '09:00'),
     ev('plain', 'Free session', TODAY, '', '10:00'),
     ev('word', 'Freedom PT', TODAY, '', '11:00')
   ], Object.assign({ clients: result.clients, ignored: [], today: TODAY }, WINDOW));
   assert.equal(again.sessions.find((s) => s.eventId === 'omar').status, 'free');
-  assert.equal(again.clients.filter((c) => c.name === 'Omar').length, 1);
+  assert.equal(again.clients.filter((c) => c.name === 'Omar free').length, 1);
   const mail = PT.buildSummary({ clients: clients, sessions: again.sessions, settings: { periods: [period] } }, TODAY, '2026-11-02 05:07 Asia/Dubai');
   const addedPart = mail.body.split('Clients low')[0];
   assert.match(addedPart, /Sessions added: 1/);
