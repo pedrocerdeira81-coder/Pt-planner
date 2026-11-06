@@ -78,11 +78,12 @@ function apiSaveClient(obj) {
     var clients = readClients_();
     var sessions = readSessionsAll_();
     var fields = packageFields_(obj);
+    var clock = dubaiClock_();
     if (!obj.id) {
-      clients = PT.createClient(clients, fields, sessions, clients);
+      clients = PT.createClient(clients, fields, sessions, clients, clock);
     } else {
       clients = mapClient_(clients, obj.id, function (c) {
-        return PT.saveClientPackage(c, fields, sessions, clients);
+        return PT.saveClientPackage(c, fields, sessions, clients, clock);
       });
     }
     writeClients_(clients);
@@ -133,7 +134,7 @@ function apiMap(obj) {
         value: obj.value,
         startDate: obj.startDate || todayDubai_(),
         note: obj.note
-      }, sessions, clients);
+      }, sessions, clients, dubaiClock_());
       var created = clients[clients.length - 1];
       var linkedNew = PT.linkName(clients, sessions, created.id, name);
       writeClients_(linkedNew.clients);
@@ -294,7 +295,7 @@ function runSync_(opts) {
           clients: saved.clients || [],
           sessions: saved.sessions || [],
           settings: phoneSettings_()
-        }, today, whenLabel_()), readBack_(saved)));
+        }, today, whenLabel_(), dubaiClock_()), readBack_(saved)));
       } catch (e2) {}
     }
     rememberTrigger_();
@@ -474,6 +475,7 @@ function publicState_() {
   try { url = ScriptApp.getService().getUrl() || ''; } catch (e2) { url = ''; }
   return {
     today: todayDubai_(),
+    nowTime: Utilities.formatDate(new Date(), TZ, 'HH:mm'),
     nowLabel: whenLabel_(),
     lastSync: getSetting_('lastSync'),
     triggerReady: triggerOn,
@@ -836,6 +838,10 @@ function asHm_(v) {
 
 function todayDubai_() {
   return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+}
+
+function dubaiClock_() {
+  return { today: todayDubai_(), time: Utilities.formatDate(new Date(), TZ, 'HH:mm') };
 }
 
 function nowStamp_() {

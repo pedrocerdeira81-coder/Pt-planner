@@ -759,12 +759,30 @@ var PT = (function () {
     if (!isBillable(session)) return false;
     return sessionCountsFor(client, allClients, session.clientName);
   }
-  function packageUsed(client, sessions, pkg, allClients) {
+  function asClock(now) {
+    if (!now) return null;
+    if (typeof now === 'string') return { today: String(now).slice(0, 10), time: '23:59' };
+    if (!now.today) return null;
+    return { today: String(now.today).slice(0, 10), time: now.time ? String(now.time).slice(0, 5) : '' };
+  }
+  function sessionHasEnded(session, now) {
+    var clock = asClock(now);
+    if (!clock) return true;
+    if (!session || !session.date) return false;
+    var date = String(session.date).slice(0, 10);
+    if (session.allDay || (!session.end && !session.start)) return date < clock.today;
+    if (date < clock.today) return true;
+    if (date > clock.today) return false;
+    if (!clock.time) return false;
+    return String(session.end || session.start) <= clock.time;
+  }
+  function packageUsed(client, sessions, pkg, allClients, now) {
     if (!client || !pkg) return 0;
     var w = packageWindow(client.packages, pkg), n = 0, list = sessions || [], i;
     for (i = 0; i < list.length; i++) {
       if (!sessionCounts(list[i], client, allClients)) continue;
       if (!sessionInWindow(list[i].date, w)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
       n++;
     }
     return n;
@@ -781,22 +799,28 @@ var PT = (function () {
     if (!pkg) pkg = sorted[0];
     return sessionRate(pkg);
   }
-  function periodSessionRevenue(clients, sessions, period, today) {
+  function periodSessionRevenue(clients, sessions, period, now) {
+    var today = asClock(now);
+    var day = today ? today.today : now;
     var total = 0, list = sessions || [], i, owner;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!inPeriod(list[i].date, period, today)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
+      if (!inPeriod(list[i].date, period, day)) continue;
       owner = findClient(clients, list[i].clientName);
       if (!owner) continue;
       total += rateForSessionDate(owner.packages, list[i].date);
     }
     return total;
   }
-  function periodBillable(clients, sessions, period, today) {
+  function periodBillable(clients, sessions, period, now) {
+    var today = asClock(now);
+    var day = today ? today.today : now;
     var out = [], list = sessions || [], i;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!inPeriod(list[i].date, period, today)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
+      if (!inPeriod(list[i].date, period, day)) continue;
       if (!findClient(clients, list[i].clientName)) continue;
       out.push(list[i]);
     }
@@ -874,10 +898,10 @@ var PT = (function () {
     if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
     return Number(pkg.sessions) || 0;
   }
-  function currentRemaining(client, sessions, allClients) {
+  function currentRemaining(client, sessions, allClients, now) {
     var pkg = currentPackage(client && client.packages);
     var total = pkg ? (Number(pkg.sessions) || 0) : 0;
-    var used = packageUsed(client, sessions, pkg, allClients || [client]);
+    var used = packageUsed(client, sessions, pkg, allClients || [client], now);
     var opening = openingLeft(pkg);
     var remaining = opening - used;
     var per = sessionRate(pkg);
@@ -886,6 +910,7 @@ var PT = (function () {
     return {
       used: used,
       total: total,
+      opening: opening,
       remaining: remaining,
       perSession: per,
       remainingValue: remaining * per,
@@ -973,14 +998,14 @@ var PT = (function () {
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
-  function createClient(clients, fields, sessions, allClients) {
+  function createClient(clients, fields, sessions, allClients, now) {
     var name = collapseSpace(fields && fields.name);
     if (!name) throw new Error('Add a name.');
     if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
     var pool = allClients || clients || [];
     var existing = findClient(clients, name);
     if (existing) {
-      var updated = saveClientPackage(existing, fields, sessions, pool);
+      var updated = saveClientPackage(existing, fields, sessions, pool, now);
       var replaced = [], n;
       for (n = 0; n < (clients || []).length; n++) {
         replaced.push(String(clients[n].id) === String(existing.id) ? updated : clients[n]);
@@ -998,7 +1023,7 @@ var PT = (function () {
       note: fields.note || '',
       aliases: []
     });
-    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]));
+    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]), now);
     return (clients || []).concat([saved]);
   }
   function saveClientPackage(client, fields, sessions, allClients) {
@@ -1010,7 +1035,7 @@ var PT = (function () {
       next = renamed[0];
     }
     var pkg = currentPackage(next.packages);
-    var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], arguments[4]);
     var explicitLeft = filledAmount(fields.sessionsLeft);
     var explicitSize = filledAmount(fields.sessions);
     var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
@@ -1367,10 +1392,10 @@ var PT = (function () {
     }
     return n;
   }
-  function lowClients(clients, sessions) {
+  function lowClients(clients, sessions, now) {
     var out = [], list = clients || [], i, stats;
     for (i = 0; i < list.length; i++) {
-      stats = currentRemaining(list[i], sessions, list);
+      stats = currentRemaining(list[i], sessions, list, now);
       if (!stats.ready || !(stats.low || stats.out)) continue;
       out.push({ name: list[i].name, remaining: stats.remaining, out: stats.out, low: stats.low });
     }
@@ -1451,18 +1476,19 @@ var PT = (function () {
     pushCapped(lines, flagged, emailLine);
     return { subject: EMAIL_SUBJECT, to: SUMMARY_EMAIL, body: lines.join('\n') };
   }
-  function buildSummary(state, today, whenLabel) {
+  function buildSummary(state, today, whenLabel, now) {
     state = state || {};
     var sessions = state.sessions || [];
     var clients = state.clients || [];
     var period = activePeriod((state.settings && state.settings.periods) || [], today);
+    var clock = now || (today ? { today: today, time: '23:59' } : null);
     return buildDailyEmail({
       ok: true,
       when: whenLabel || (today + ' Asia/Dubai'),
       period: period ? (period.start + ' to ' + period.end) : '',
       added: summaryAdded(sessions, today),
       olderSaved: olderSavedToday(sessions, today),
-      low: lowClients(clients, sessions),
+      low: lowClients(clients, sessions, clock),
       flagged: flaggedSoon(sessions, today)
     });
   }
@@ -1786,12 +1812,12 @@ var PT = (function () {
       '</div><span class="tag ' + esc(s.status || 'normal') + '">' + statusLabel(s.status) + '</span></button>';
   }
   function clientButton(c) {
-    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
     var klass = !st.ready ? 'ok' : (st.out ? 'out' : (st.low ? 'low' : 'ok'));
     var badge = !st.ready ? '<span class="pill low">Set</span>' : (st.out ? '<span class="pill out">Out</span>' : (st.low ? '<span class="pill low">Low</span>' : ''));
     var pct = st.total > 0 ? Math.max(0, Math.min(100, Math.round((st.used / st.total) * 100))) : (st.out ? 100 : 0);
     var period = viewedPeriod();
-    var monthCount = period ? PT.periodBillable([c], state.sessions, period, state.today).length : 0;
+    var monthCount = period ? PT.periodBillable([c], state.sessions, period, viewClock()).length : 0;
     return '<button type="button" class="client ' + klass + '" data-act="open-client" data-id="' + esc(c.id) + '">' +
       '<div class="client-top"><div class="name">' + esc(c.name) + '</div><div>' + badge + '</div></div>' +
       '<div class="bar"><span style="width:' + pct + '%"></span></div>' +
@@ -1831,9 +1857,13 @@ var PT = (function () {
     return '<div class="backdrop" data-act="close"><div class="sheet" data-act="stop"><div class="handle"></div>' + ui.sheet + '<div class="err" id="form-error">' + esc(ui.error || '') + '</div></div></div>';
   }
 
+  function viewClock() {
+    return { today: state.today || '', time: state.nowTime || '' };
+  }
   function payFigures(period) {
-    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
-    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
+    var clock = viewClock();
+    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, clock) : [];
+    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, clock) : 0;
     var chargeTotal = period ? PT.periodChargeTotal(state.charges, period, state.today) : 0;
     var est = PT.commissionEstimate({
       sessionRevenue: earned,
@@ -1861,10 +1891,10 @@ var PT = (function () {
       return s.date === today && s.disposition === 'kept';
     }).sort(PT.compareSessions);
     var attention = (state.clients || []).filter(function (c) {
-      var st = PT.currentRemaining(c, state.sessions, state.clients);
+      var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
       return st.ready && (st.low || st.out);
     });
-    var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients).ready; });
+    var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients, viewClock()).ready; });
     var period = viewedPeriod();
     var pay = payFigures(period);
     var lead = periodBar();
@@ -1888,7 +1918,7 @@ var PT = (function () {
     }
     body += '<h2>Packages</h2>';
     var rest = (state.clients || []).slice().sort(function (a, b) {
-      return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
+      return PT.currentRemaining(a, state.sessions, state.clients, viewClock()).remaining - PT.currentRemaining(b, state.sessions, state.clients, viewClock()).remaining;
     });
     if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title ends in PT.</div>';
     else {
@@ -1944,11 +1974,13 @@ var PT = (function () {
   function clientScreen(id) {
     var c = clientById(id);
     if (!c) return shell('Client', '<div class="card empty">That client is not here.</div>', '#clients');
-    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
     var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
     var body = '<div class="detail"><div class="detail-side"><div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
       '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (!st.ready ? 'var(--ink)' : st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + (st.ready ? (st.remaining + '<small>left</small>') : '<small style="font-size:28px">Set the package</small>') + '</div>' +
       '<p class="meta" style="margin-top:8px">' + (st.ready ? (st.used + ' of ' + st.total + ' used · ' + moneyExact(st.perSession) + ' each') : 'Add the package size, what is left, and the price.') + '</p>' +
+      (st.ready && (st.used + st.remaining) !== st.total ? '<p class="meta">Used ' + st.used + ' plus left ' + st.remaining + ' is ' + (st.used + st.remaining) + '. The package size is ' + st.total + '. They differ because sessions left was typed in, and that typed number is kept.</p>' : '') +
+      '<p class="meta">Only sessions that have already finished, on or after the start date, are used. Later bookings stay on the list.</p>' +
       '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Package</span></div><div class="stat"><b>' + (st.ready ? esc(moneyExact(st.remainingValue)) : '—') + '</b><span>Value left</span></div></div>' +
       '<p class="meta">Counts from ' + esc(st.startDate ? prettyDate(st.startDate) : 'the start date') + (st.note ? ' · ' + esc(st.note) : '') + '</p>' +
       '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div></div><div class="detail-main">';
@@ -1956,7 +1988,7 @@ var PT = (function () {
     if (packages.length > 1) {
       body += '<h2>History</h2>';
       packages.forEach(function (pkg) {
-        var used = PT.packageUsed(c, state.sessions, pkg, state.clients);
+        var used = PT.packageUsed(c, state.sessions, pkg, state.clients, viewClock());
         var current = PT.currentPackage(c.packages);
         body += '<div class="card"><b>' + (current && current.id === pkg.id ? 'Current package' : 'Earlier package') + '</b><div class="meta" style="margin-top:4px">' + used + ' of ' + esc(pkg.sessions) + ' used · ' + esc(money(pkg.value)) + (pkg.startDate ? ' · from ' + esc(prettyDate(pkg.startDate)) : '') + '</div></div>';
       });
@@ -2127,9 +2159,9 @@ var PT = (function () {
   function openClientForm(c) {
     ui.error = '';
     var pkg = c ? PT.currentPackage(c.packages) : null;
-    var st = c ? PT.currentRemaining(c, state.sessions, state.clients) : null;
+    var st = c ? PT.currentRemaining(c, state.sessions, state.clients, viewClock()) : null;
     var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
-    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored, so an old calendar does not use up a fresh package. Leave sessions left empty to subtract every saved session on or after the start date, including ones still ahead on the calendar.</p>' +
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Leave sessions left empty the first time to subtract those finished sessions from the package size. A number you type there is the balance to show now, and it is kept.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
       payFields(pkg, left) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
@@ -2207,7 +2239,7 @@ var PT = (function () {
         state.ignored = ig.ignored;
         state.sessions = ig.sessions.filter(function (s) { return s.disposition !== 'ignored'; });
       } else if (a.action === 'create') {
-        state.clients = PT.createClient(state.clients, a);
+        state.clients = PT.createClient(state.clients, a, state.sessions, state.clients, viewClock());
         var created = state.clients[state.clients.length - 1];
         var made = PT.linkName(state.clients, state.sessions, created.id, a.name);
         state.clients = made.clients;
@@ -2218,10 +2250,10 @@ var PT = (function () {
         state.sessions = linked.sessions;
       }
     } else if (name === 'apiSaveClient') {
-      if (!a.id) state.clients = PT.createClient(state.clients, a, state.sessions, state.clients);
+      if (!a.id) state.clients = PT.createClient(state.clients, a, state.sessions, state.clients, viewClock());
       else {
         state.clients = state.clients.map(function (c) {
-          return String(c.id) === String(a.id) ? PT.saveClientPackage(c, a, state.sessions, state.clients) : c;
+          return String(c.id) === String(a.id) ? PT.saveClientPackage(c, a, state.sessions, state.clients, viewClock()) : c;
         });
       }
     } else if (name === 'apiSavePeriods') {
@@ -2545,7 +2577,8 @@ var PT = (function () {
     });
     return {
       today: '2026-11-02',
-      nowLabel: '2026-11-02 05:04 Asia/Dubai',
+      nowTime: '18:00',
+      nowLabel: '2026-11-02 18:00 Asia/Dubai',
       lastSync: '2026-11-02 05:04 Asia/Dubai',
       triggerReady: true,
       triggerError: '',

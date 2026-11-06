@@ -498,12 +498,12 @@ a { color: var(--green); }
       '</div><span class="tag ' + esc(s.status || 'normal') + '">' + statusLabel(s.status) + '</span></button>';
   }
   function clientButton(c) {
-    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
     var klass = !st.ready ? 'ok' : (st.out ? 'out' : (st.low ? 'low' : 'ok'));
     var badge = !st.ready ? '<span class="pill low">Set</span>' : (st.out ? '<span class="pill out">Out</span>' : (st.low ? '<span class="pill low">Low</span>' : ''));
     var pct = st.total > 0 ? Math.max(0, Math.min(100, Math.round((st.used / st.total) * 100))) : (st.out ? 100 : 0);
     var period = viewedPeriod();
-    var monthCount = period ? PT.periodBillable([c], state.sessions, period, state.today).length : 0;
+    var monthCount = period ? PT.periodBillable([c], state.sessions, period, viewClock()).length : 0;
     return '<button type="button" class="client ' + klass + '" data-act="open-client" data-id="' + esc(c.id) + '">' +
       '<div class="client-top"><div class="name">' + esc(c.name) + '</div><div>' + badge + '</div></div>' +
       '<div class="bar"><span style="width:' + pct + '%"></span></div>' +
@@ -543,9 +543,13 @@ a { color: var(--green); }
     return '<div class="backdrop" data-act="close"><div class="sheet" data-act="stop"><div class="handle"></div>' + ui.sheet + '<div class="err" id="form-error">' + esc(ui.error || '') + '</div></div></div>';
   }
 
+  function viewClock() {
+    return { today: state.today || '', time: state.nowTime || '' };
+  }
   function payFigures(period) {
-    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, state.today) : [];
-    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, state.today) : 0;
+    var clock = viewClock();
+    var billable = period ? PT.periodBillable(state.clients, state.sessions, period, clock) : [];
+    var earned = period ? PT.periodSessionRevenue(state.clients, state.sessions, period, clock) : 0;
     var chargeTotal = period ? PT.periodChargeTotal(state.charges, period, state.today) : 0;
     var est = PT.commissionEstimate({
       sessionRevenue: earned,
@@ -573,10 +577,10 @@ a { color: var(--green); }
       return s.date === today && s.disposition === 'kept';
     }).sort(PT.compareSessions);
     var attention = (state.clients || []).filter(function (c) {
-      var st = PT.currentRemaining(c, state.sessions, state.clients);
+      var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
       return st.ready && (st.low || st.out);
     });
-    var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients).ready; });
+    var needs = (state.clients || []).filter(function (c) { return !PT.currentRemaining(c, state.sessions, state.clients, viewClock()).ready; });
     var period = viewedPeriod();
     var pay = payFigures(period);
     var lead = periodBar();
@@ -600,7 +604,7 @@ a { color: var(--green); }
     }
     body += '<h2>Packages</h2>';
     var rest = (state.clients || []).slice().sort(function (a, b) {
-      return PT.currentRemaining(a, state.sessions, state.clients).remaining - PT.currentRemaining(b, state.sessions, state.clients).remaining;
+      return PT.currentRemaining(a, state.sessions, state.clients, viewClock()).remaining - PT.currentRemaining(b, state.sessions, state.clients, viewClock()).remaining;
     });
     if (!rest.length) body += '<div class="card empty">Clients appear when a calendar title ends in PT.</div>';
     else {
@@ -656,11 +660,13 @@ a { color: var(--green); }
   function clientScreen(id) {
     var c = clientById(id);
     if (!c) return shell('Client', '<div class="card empty">That client is not here.</div>', '#clients');
-    var st = PT.currentRemaining(c, state.sessions, state.clients);
+    var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
     var klass = st.out ? 'out' : (st.low ? 'low' : 'ok');
     var body = '<div class="detail"><div class="detail-side"><div class="card"><div class="name" style="font-size:22px">' + esc(c.name) + '</div>' +
       '<div class="hero-num ' + klass + '" style="margin-top:10px;color:' + (!st.ready ? 'var(--ink)' : st.out ? 'var(--red)' : st.low ? 'var(--amber)' : 'var(--green)') + '">' + (st.ready ? (st.remaining + '<small>left</small>') : '<small style="font-size:28px">Set the package</small>') + '</div>' +
       '<p class="meta" style="margin-top:8px">' + (st.ready ? (st.used + ' of ' + st.total + ' used · ' + moneyExact(st.perSession) + ' each') : 'Add the package size, what is left, and the price.') + '</p>' +
+      (st.ready && (st.used + st.remaining) !== st.total ? '<p class="meta">Used ' + st.used + ' plus left ' + st.remaining + ' is ' + (st.used + st.remaining) + '. The package size is ' + st.total + '. They differ because sessions left was typed in, and that typed number is kept.</p>' : '') +
+      '<p class="meta">Only sessions that have already finished, on or after the start date, are used. Later bookings stay on the list.</p>' +
       '<div class="grid" style="margin-top:12px"><div class="stat"><b>' + esc(money(st.value)) + '</b><span>Package</span></div><div class="stat"><b>' + (st.ready ? esc(moneyExact(st.remainingValue)) : '—') + '</b><span>Value left</span></div></div>' +
       '<p class="meta">Counts from ' + esc(st.startDate ? prettyDate(st.startDate) : 'the start date') + (st.note ? ' · ' + esc(st.note) : '') + '</p>' +
       '<div class="pair" style="margin-top:8px"><button type="button" class="primary" data-act="renew" data-id="' + esc(c.id) + '">Renew</button><button type="button" class="ghost" data-act="fix" data-id="' + esc(c.id) + '">Fix numbers</button></div></div></div><div class="detail-main">';
@@ -668,7 +674,7 @@ a { color: var(--green); }
     if (packages.length > 1) {
       body += '<h2>History</h2>';
       packages.forEach(function (pkg) {
-        var used = PT.packageUsed(c, state.sessions, pkg, state.clients);
+        var used = PT.packageUsed(c, state.sessions, pkg, state.clients, viewClock());
         var current = PT.currentPackage(c.packages);
         body += '<div class="card"><b>' + (current && current.id === pkg.id ? 'Current package' : 'Earlier package') + '</b><div class="meta" style="margin-top:4px">' + used + ' of ' + esc(pkg.sessions) + ' used · ' + esc(money(pkg.value)) + (pkg.startDate ? ' · from ' + esc(prettyDate(pkg.startDate)) : '') + '</div></div>';
       });
@@ -839,9 +845,9 @@ a { color: var(--green); }
   function openClientForm(c) {
     ui.error = '';
     var pkg = c ? PT.currentPackage(c.packages) : null;
-    var st = c ? PT.currentRemaining(c, state.sessions, state.clients) : null;
+    var st = c ? PT.currentRemaining(c, state.sessions, state.clients, viewClock()) : null;
     var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
-    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored, so an old calendar does not use up a fresh package. Leave sessions left empty to subtract every saved session on or after the start date, including ones still ahead on the calendar.</p>' +
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Leave sessions left empty the first time to subtract those finished sessions from the package size. A number you type there is the balance to show now, and it is kept.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
       payFields(pkg, left) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
@@ -919,7 +925,7 @@ a { color: var(--green); }
         state.ignored = ig.ignored;
         state.sessions = ig.sessions.filter(function (s) { return s.disposition !== 'ignored'; });
       } else if (a.action === 'create') {
-        state.clients = PT.createClient(state.clients, a);
+        state.clients = PT.createClient(state.clients, a, state.sessions, state.clients, viewClock());
         var created = state.clients[state.clients.length - 1];
         var made = PT.linkName(state.clients, state.sessions, created.id, a.name);
         state.clients = made.clients;
@@ -930,10 +936,10 @@ a { color: var(--green); }
         state.sessions = linked.sessions;
       }
     } else if (name === 'apiSaveClient') {
-      if (!a.id) state.clients = PT.createClient(state.clients, a, state.sessions, state.clients);
+      if (!a.id) state.clients = PT.createClient(state.clients, a, state.sessions, state.clients, viewClock());
       else {
         state.clients = state.clients.map(function (c) {
-          return String(c.id) === String(a.id) ? PT.saveClientPackage(c, a, state.sessions, state.clients) : c;
+          return String(c.id) === String(a.id) ? PT.saveClientPackage(c, a, state.sessions, state.clients, viewClock()) : c;
         });
       }
     } else if (name === 'apiSavePeriods') {
@@ -1257,7 +1263,8 @@ a { color: var(--green); }
     });
     return {
       today: '2026-11-02',
-      nowLabel: '2026-11-02 05:04 Asia/Dubai',
+      nowTime: '18:00',
+      nowLabel: '2026-11-02 18:00 Asia/Dubai',
       lastSync: '2026-11-02 05:04 Asia/Dubai',
       triggerReady: true,
       triggerError: '',

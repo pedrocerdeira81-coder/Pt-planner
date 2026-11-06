@@ -384,12 +384,30 @@ var PT = (function () {
     if (!isBillable(session)) return false;
     return sessionCountsFor(client, allClients, session.clientName);
   }
-  function packageUsed(client, sessions, pkg, allClients) {
+  function asClock(now) {
+    if (!now) return null;
+    if (typeof now === 'string') return { today: String(now).slice(0, 10), time: '23:59' };
+    if (!now.today) return null;
+    return { today: String(now.today).slice(0, 10), time: now.time ? String(now.time).slice(0, 5) : '' };
+  }
+  function sessionHasEnded(session, now) {
+    var clock = asClock(now);
+    if (!clock) return true;
+    if (!session || !session.date) return false;
+    var date = String(session.date).slice(0, 10);
+    if (session.allDay || (!session.end && !session.start)) return date < clock.today;
+    if (date < clock.today) return true;
+    if (date > clock.today) return false;
+    if (!clock.time) return false;
+    return String(session.end || session.start) <= clock.time;
+  }
+  function packageUsed(client, sessions, pkg, allClients, now) {
     if (!client || !pkg) return 0;
     var w = packageWindow(client.packages, pkg), n = 0, list = sessions || [], i;
     for (i = 0; i < list.length; i++) {
       if (!sessionCounts(list[i], client, allClients)) continue;
       if (!sessionInWindow(list[i].date, w)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
       n++;
     }
     return n;
@@ -406,22 +424,28 @@ var PT = (function () {
     if (!pkg) pkg = sorted[0];
     return sessionRate(pkg);
   }
-  function periodSessionRevenue(clients, sessions, period, today) {
+  function periodSessionRevenue(clients, sessions, period, now) {
+    var today = asClock(now);
+    var day = today ? today.today : now;
     var total = 0, list = sessions || [], i, owner;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!inPeriod(list[i].date, period, today)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
+      if (!inPeriod(list[i].date, period, day)) continue;
       owner = findClient(clients, list[i].clientName);
       if (!owner) continue;
       total += rateForSessionDate(owner.packages, list[i].date);
     }
     return total;
   }
-  function periodBillable(clients, sessions, period, today) {
+  function periodBillable(clients, sessions, period, now) {
+    var today = asClock(now);
+    var day = today ? today.today : now;
     var out = [], list = sessions || [], i;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!inPeriod(list[i].date, period, today)) continue;
+      if (!sessionHasEnded(list[i], now)) continue;
+      if (!inPeriod(list[i].date, period, day)) continue;
       if (!findClient(clients, list[i].clientName)) continue;
       out.push(list[i]);
     }
@@ -499,10 +523,10 @@ var PT = (function () {
     if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
     return Number(pkg.sessions) || 0;
   }
-  function currentRemaining(client, sessions, allClients) {
+  function currentRemaining(client, sessions, allClients, now) {
     var pkg = currentPackage(client && client.packages);
     var total = pkg ? (Number(pkg.sessions) || 0) : 0;
-    var used = packageUsed(client, sessions, pkg, allClients || [client]);
+    var used = packageUsed(client, sessions, pkg, allClients || [client], now);
     var opening = openingLeft(pkg);
     var remaining = opening - used;
     var per = sessionRate(pkg);
@@ -511,6 +535,7 @@ var PT = (function () {
     return {
       used: used,
       total: total,
+      opening: opening,
       remaining: remaining,
       perSession: per,
       remainingValue: remaining * per,
@@ -598,14 +623,14 @@ var PT = (function () {
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
-  function createClient(clients, fields, sessions, allClients) {
+  function createClient(clients, fields, sessions, allClients, now) {
     var name = collapseSpace(fields && fields.name);
     if (!name) throw new Error('Add a name.');
     if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
     var pool = allClients || clients || [];
     var existing = findClient(clients, name);
     if (existing) {
-      var updated = saveClientPackage(existing, fields, sessions, pool);
+      var updated = saveClientPackage(existing, fields, sessions, pool, now);
       var replaced = [], n;
       for (n = 0; n < (clients || []).length; n++) {
         replaced.push(String(clients[n].id) === String(existing.id) ? updated : clients[n]);
@@ -623,7 +648,7 @@ var PT = (function () {
       note: fields.note || '',
       aliases: []
     });
-    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]));
+    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]), now);
     return (clients || []).concat([saved]);
   }
   function saveClientPackage(client, fields, sessions, allClients) {
@@ -635,7 +660,7 @@ var PT = (function () {
       next = renamed[0];
     }
     var pkg = currentPackage(next.packages);
-    var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], arguments[4]);
     var explicitLeft = filledAmount(fields.sessionsLeft);
     var explicitSize = filledAmount(fields.sessions);
     var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
@@ -992,10 +1017,10 @@ var PT = (function () {
     }
     return n;
   }
-  function lowClients(clients, sessions) {
+  function lowClients(clients, sessions, now) {
     var out = [], list = clients || [], i, stats;
     for (i = 0; i < list.length; i++) {
-      stats = currentRemaining(list[i], sessions, list);
+      stats = currentRemaining(list[i], sessions, list, now);
       if (!stats.ready || !(stats.low || stats.out)) continue;
       out.push({ name: list[i].name, remaining: stats.remaining, out: stats.out, low: stats.low });
     }
@@ -1076,18 +1101,19 @@ var PT = (function () {
     pushCapped(lines, flagged, emailLine);
     return { subject: EMAIL_SUBJECT, to: SUMMARY_EMAIL, body: lines.join('\n') };
   }
-  function buildSummary(state, today, whenLabel) {
+  function buildSummary(state, today, whenLabel, now) {
     state = state || {};
     var sessions = state.sessions || [];
     var clients = state.clients || [];
     var period = activePeriod((state.settings && state.settings.periods) || [], today);
+    var clock = now || (today ? { today: today, time: '23:59' } : null);
     return buildDailyEmail({
       ok: true,
       when: whenLabel || (today + ' Asia/Dubai'),
       period: period ? (period.start + ' to ' + period.end) : '',
       added: summaryAdded(sessions, today),
       olderSaved: olderSavedToday(sessions, today),
-      low: lowClients(clients, sessions),
+      low: lowClients(clients, sessions, clock),
       flagged: flaggedSoon(sessions, today)
     });
   }

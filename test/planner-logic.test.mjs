@@ -452,15 +452,16 @@ test('Yusuf package save sticks, deducts each eligible session once, and a blank
   const yusuf = made.clients.find((c) => c.name === 'Yusuf');
   assert.equal(yusuf.packages[0].sessions, '');
   assert.equal(PT.packageReady(yusuf.packages[0]), false);
+  const now = { today: '2026-11-06', time: '16:37' };
   const saved = PT.saveClientPackage(yusuf, {
     sessions: '10', value: '4000', startDate: '2026-11-03', note: ''
-  }, made.sessions, made.clients);
+  }, made.sessions, made.clients, now);
   assert.equal(saved.id, yusuf.id);
   assert.equal(PT.packageReady(saved.packages[0]), true);
   assert.equal(saved.packages[0].value, '4000');
-  const stats = PT.currentRemaining(saved, made.sessions, made.clients.map((c) => c.id === saved.id ? saved : c));
-  assert.equal(stats.used, 2);
-  assert.equal(stats.remaining, 8);
+  const stats = PT.currentRemaining(saved, made.sessions, made.clients.map((c) => c.id === saved.id ? saved : c), now);
+  assert.equal(stats.used, 1);
+  assert.equal(stats.remaining, 9);
   const again = PT.applySync(made.sessions, [
     ev('y1', 'Yusuf PT', '2026-11-05', '', '12:00'),
     ev('y2', 'Yusuf PT', '2026-11-12', '', '12:00'),
@@ -469,13 +470,13 @@ test('Yusuf package save sticks, deducts each eligible session once, and a blank
   ], Object.assign({ clients: [saved], ignored: [], today: '2026-11-06' }, WINDOW));
   assert.equal(again.clients[0].packages[0].sessions, '10');
   assert.equal(again.clients[0].packages[0].value, '4000');
-  assert.equal(PT.currentRemaining(again.clients[0], again.sessions, again.clients).used, 2);
+  assert.equal(PT.currentRemaining(again.clients[0], again.sessions, again.clients, now).used, 1);
   const named = PT.createClient(again.clients, {
     name: 'Yusuf', sessions: '12', value: '4800', startDate: '2026-11-03', sessionsLeft: '9'
-  }, again.sessions, again.clients);
+  }, again.sessions, again.clients, now);
   assert.equal(named.length, again.clients.length);
   assert.equal(named.find((c) => c.name === 'Yusuf').id, yusuf.id);
-  assert.equal(PT.currentRemaining(named.find((c) => c.name === 'Yusuf'), again.sessions, named).remaining, 9);
+  assert.equal(PT.currentRemaining(named.find((c) => c.name === 'Yusuf'), again.sessions, named, now).remaining, 9);
   const wiped = PT.mergeClientRecord(saved, {
     id: saved.id,
     name: 'Yusuf',
@@ -496,6 +497,60 @@ test('Yusuf package save sticks, deducts each eligible session once, and a blank
   assert.equal(PT.addDaysYmd('2026-11-05', -1), '2026-11-04');
   assert.equal(PT.addDaysYmd('2026-11-01', -1), '2026-10-31');
   assert.equal(PT.mondayOf('2026-11-05'), '2026-11-02');
+});
+
+test('a package of 6 uses finished Yusuf sessions after 5 Nov and not later Thursdays', () => {
+  const now = { today: '2026-11-06', time: '16:37' };
+  const yusuf = client({
+    id: 'yusuf', name: 'Yusuf', packageSessions: '6', packageValue: '', startDate: '2026-11-05'
+  });
+  yusuf.packages[0].note = 'Split with mira';
+  function row(id, date, start, end) {
+    return {
+      eventId: id, clientName: 'Yusuf', title: 'Yusuf PT', date: date,
+      start: start, end: end, status: 'normal', disposition: 'kept'
+    };
+  }
+  const sessions = [
+    row('before', '2026-11-04', '12:00', '13:00'),
+    row('nov5', '2026-11-05', '12:00', '13:00'),
+    row('ended-today', '2026-11-06', '12:00', '13:00'),
+    row('later-today', '2026-11-06', '18:00', '19:00'),
+    row('nov26', '2026-11-26', '12:00', '13:00'),
+    row('dec3', '2026-12-03', '12:00', '13:00'),
+    row('dec10', '2026-12-10', '12:00', '13:00'),
+    row('dec17', '2026-12-17', '12:00', '13:00'),
+    row('dec24', '2026-12-24', '12:00', '13:00'),
+    row('dec31', '2026-12-31', '12:00', '13:00')
+  ];
+  const onlyPast = sessions.filter((s) => s.eventId === 'before' || s.eventId === 'nov5' || s.eventId.indexOf('dec') === 0 || s.eventId === 'nov26');
+  const first = PT.currentRemaining(yusuf, onlyPast, [yusuf], now);
+  assert.equal(first.used, 1);
+  assert.equal(first.remaining, 5);
+  assert.equal(first.used + first.remaining, first.total);
+  assert.equal(first.total, 6);
+  assert.equal(yusuf.packages[0].value, '');
+  assert.equal(yusuf.packages[0].note, 'Split with mira');
+  assert.equal(PT.packageUsed(yusuf, onlyPast, yusuf.packages[0], [yusuf], now), 1);
+  const withToday = PT.currentRemaining(yusuf, sessions, [yusuf], now);
+  assert.equal(withToday.used, 2);
+  assert.equal(withToday.remaining, 4);
+  assert.equal(withToday.used + withToday.remaining, 6);
+  const manual = client({
+    id: 'yusuf', name: 'Yusuf', packageSessions: '12', packageValue: '4080', startDate: '2026-11-05'
+  });
+  manual.packages[0].sessionsLeft = '13';
+  const shown = PT.currentRemaining(manual, sessions, [manual], now);
+  assert.equal(shown.total, 12);
+  assert.equal(shown.used, 2);
+  assert.equal(shown.opening, 13);
+  assert.equal(shown.remaining, 11);
+  assert.equal(shown.used + shown.remaining, 13);
+  assert.notEqual(shown.used + shown.remaining, shown.total);
+  const renewed = PT.renewPackage(yusuf, { sessions: '6', value: '', startDate: '2026-12-01' });
+  assert.equal(PT.packageUsed(renewed, sessions, renewed.packages[0], [renewed], now), 2);
+  assert.equal(PT.currentRemaining(renewed, sessions, [renewed], now).used, 0);
+  assert.equal(PT.packageUsed(renewed, sessions, renewed.packages[1], [renewed], { today: '2026-12-04', time: '16:00' }), 1);
 });
 
 test('exact names do not let Ali take Alison', () => {
