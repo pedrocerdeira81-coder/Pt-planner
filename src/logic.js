@@ -1276,6 +1276,7 @@ var PT = (function () {
     packageUsed: packageUsed,
     packageWindow: packageWindow,
     isBillable: isBillable,
+    sessionHasEnded: sessionHasEnded,
     periodSessionRevenue: periodSessionRevenue,
     periodBillable: periodBillable,
     chargeAmount: chargeAmount,

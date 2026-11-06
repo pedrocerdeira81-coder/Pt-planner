@@ -553,6 +553,54 @@ test('a package of 6 uses finished Yusuf sessions after 5 Nov and not later Thur
   assert.equal(PT.packageUsed(renewed, sessions, renewed.packages[1], [renewed], { today: '2026-12-04', time: '16:00' }), 1);
 });
 
+test('a full J Club period counts only sessions finished by Dubai time', () => {
+  const period = { start: '2026-10-30', end: '2026-11-28' };
+  const now = { today: '2026-11-06', time: '16:37' };
+  const person = client({
+    id: 'yusuf', name: 'Yusuf', packageSessions: '6', packageValue: '600', startDate: '2026-11-05'
+  });
+  function row(id, date, start, end, status) {
+    return {
+      eventId: id, clientName: 'Yusuf', title: 'Yusuf PT', date: date,
+      start: start, end: end, status: status || 'normal', disposition: 'kept'
+    };
+  }
+  const sessions = [
+    row('oct31', '2026-10-31', '10:00', '11:00'),
+    row('nov5', '2026-11-05', '12:00', '13:00'),
+    row('morning', '2026-11-06', '12:00', '13:00'),
+    row('tonight', '2026-11-06', '18:00', '19:00'),
+    row('free', '2026-11-04', '09:00', '10:00', 'free'),
+    row('nov12', '2026-11-12', '12:00', '13:00'),
+    row('nov26', '2026-11-26', '12:00', '13:00')
+  ];
+  const finished = sessions.filter((s) => PT.sessionHasEnded(s, now));
+  const full = PT.periodBillable([person], sessions, period, now);
+  const cutoff = PT.periodBillable([person], finished, period, now);
+  assert.equal(full.length, 3);
+  assert.equal(cutoff.length, full.length);
+  assert.equal(full.some((s) => s.eventId === 'tonight' || s.eventId === 'nov12' || s.eventId === 'nov26' || s.eventId === 'free'), false);
+  const revenue = PT.periodSessionRevenue([person], sessions, period, now);
+  assert.equal(revenue, PT.periodSessionRevenue([person], finished, period, now));
+  assert.equal(revenue, 300);
+  const est = PT.commissionEstimate({
+    sessionRevenue: revenue, sessionCount: full.length, chargeTotal: 0,
+    comm: { quota: '0', netFactor: '100', includeCharges: false }
+  });
+  const inflated = PT.commissionEstimate({
+    sessionRevenue: 600, sessionCount: 6, chargeTotal: 0,
+    comm: { quota: '0', netFactor: '100', includeCharges: false }
+  });
+  assert.equal(est.sessionCount, 3);
+  assert.equal(est.tierRate, 0.45);
+  assert.equal(est.commission, 135);
+  assert.notEqual(est.commission, inflated.commission);
+  const pack = PT.currentRemaining(person, sessions, [person], now);
+  assert.equal(pack.used, 2);
+  assert.equal(pack.remaining, 4);
+  assert.equal(pack.used + pack.remaining, pack.total);
+});
+
 test('exact names do not let Ali take Alison', () => {
   assert.equal(PT.namesMatch('Ali', 'Alison'), false);
   assert.equal(PT.namesMatch('Jean  Pierre', 'jean pierre'), true);

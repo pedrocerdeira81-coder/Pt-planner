@@ -155,6 +155,7 @@ h2 {
 }
 .tag.normal, .pill.ok { background: var(--green-soft); color: var(--green); }
 .tag.free { background: var(--blue-soft); color: var(--blue); }
+.tag.booked { background: #e7eef5; color: #3d5a73; }
 .tag.charged, .pill.low { background: var(--amber-soft); color: var(--amber); }
 .pill.out { background: var(--red-soft); color: var(--red); }
 .client {
@@ -1651,6 +1652,7 @@ var PT = (function () {
     packageUsed: packageUsed,
     packageWindow: packageWindow,
     isBillable: isBillable,
+    sessionHasEnded: sessionHasEnded,
     periodSessionRevenue: periodSessionRevenue,
     periodBillable: periodBillable,
     chargeAmount: chargeAmount,
@@ -1801,15 +1803,21 @@ var PT = (function () {
     return el.value;
   }
 
+  function sessionEnded(s) {
+    return PT.sessionHasEnded(s, viewClock());
+  }
   function sessionButton(s, withDate) {
     var free = s.status === 'free';
+    var ended = sessionEnded(s);
     var when = '<b>' + esc(prettyTime(s.start, s.allDay)) + '</b>';
     if (withDate) when = '<span class="meta">' + esc(prettyDate(s.date) || s.date || '') + '</span>' + when;
-    return '<button type="button" class="row' + (free ? ' is-free' : '') + '" data-act="session" data-id="' + esc(s.eventId) + '">' +
+    var tag = ended ? statusLabel(s.status) : 'Booked';
+    var tagClass = ended ? (s.status || 'normal') : 'booked';
+    return '<button type="button" class="row' + (free ? ' is-free' : '') + (ended ? '' : ' is-booked') + '" data-act="session" data-id="' + esc(s.eventId) + '">' +
       '<div class="when">' + when + '</div>' +
       '<div class="grow"><div class="name">' + esc(s.clientName) + '</div>' +
       (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '') +
-      '</div><span class="tag ' + esc(s.status || 'normal') + '">' + statusLabel(s.status) + '</span></button>';
+      '</div><span class="tag ' + esc(tagClass) + '">' + tag + '</span></button>';
   }
   function clientButton(c) {
     var st = PT.currentRemaining(c, state.sessions, state.clients, viewClock());
@@ -1822,7 +1830,7 @@ var PT = (function () {
       '<div class="client-top"><div class="name">' + esc(c.name) + '</div><div>' + badge + '</div></div>' +
       '<div class="bar"><span style="width:' + pct + '%"></span></div>' +
       '<div class="spread"><span class="left ' + klass + '">' + (st.ready ? (st.remaining + ' left') : 'Set package') + '</span><span class="meta">' + (st.ready ? (st.used + ' of ' + st.total + ' used') : 'From the calendar') + '</span></div>' +
-      '<div class="spread" style="margin-top:6px"><span class="meta">' + monthCount + ' this period</span><span class="meta">' + (st.ready ? esc(money(st.remainingValue)) + ' left' : 'Set package') + '</span></div></button>';
+      '<div class="spread" style="margin-top:6px"><span class="meta">' + monthCount + ' finished</span><span class="meta">' + (st.ready ? esc(money(st.remainingValue)) + ' left' : 'Set package') + '</span></div></button>';
   }
 
   function shell(title, body, back) {
@@ -1878,7 +1886,7 @@ var PT = (function () {
     var off = state.settings && state.settings.showCommission === false;
     var next = est.sessionsToNext ? String(est.sessionsToNext) : 'Top';
     var tier = (est.tierPercent != null ? est.tierPercent : 0) + '%';
-    return '<div class="stats"><div><span>Sessions</span><b>' + pay.billable.length + '</b></div>' +
+    return '<div class="stats"><div><span>Finished</span><b>' + pay.billable.length + '</b></div>' +
       '<div><span>Tier</span><b>' + esc(tier) + '</b></div>' +
       '<div><span>To next</span><b>' + esc(next) + '</b></div>' +
       '<div><span>Revenue</span><b>' + esc(moneyExact(pay.earned)) + '</b></div>' +
@@ -1901,8 +1909,9 @@ var PT = (function () {
     lead += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + (state.source && state.source.id ? (' · sheet ' + state.source.id) : '') + '</p>';
     lead += payStats(pay);
     lead += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
-    var todayCount = todays.filter(function (s) { return s.status !== 'free'; }).length;
-    var todayBlock = '<h2>Today <span class="meta">' + todayCount + '</span></h2>';
+    var todayFinished = todays.filter(function (s) { return s.status !== 'free' && sessionEnded(s); }).length;
+    var todayBooked = todays.filter(function (s) { return s.status !== 'free' && !sessionEnded(s); }).length;
+    var todayBlock = '<h2>Today <span class="meta">' + todayFinished + ' finished' + (todayBooked ? (' · ' + todayBooked + ' booked') : '') + '</span></h2>';
     if (!todays.length) todayBlock += '<div class="card empty">Nothing on the calendar today.</div>';
     todays.forEach(function (s) { todayBlock += sessionButton(s); });
     var body = '<div class="home-split"><div class="home-lead">' + lead + '</div><div class="home-today">' + todayBlock + '</div></div>';
@@ -1943,14 +1952,15 @@ var PT = (function () {
       '<button type="button" class="ghost" data-act="day" data-id="today">Today</button>' +
       '<button type="button" class="ghost" data-act="day" data-id="1">Next day</button></div>' +
       '<div class="weekbar"><button type="button" class="ghost small" data-act="day" data-id="-7">Previous week</button><b>' + esc(prettyDate(start) + ' – ' + prettyDate(end)) + '</b><button type="button" class="ghost small" data-act="day" data-id="7">Next week</button></div>' +
-      '<p class="meta">The number on a day leaves free sessions out. Only sessions already saved from the calendar are here.</p><div class="week-grid">';
+      '<p class="meta">A day number is bookings already saved. Booked means it has not finished yet. Finished totals are on Home and Report.</p><div class="week-grid">';
     var d, i, list, label;
     for (i = 0; i < 7; i++) {
       d = PT.addDaysYmd(start, i);
       list = (state.sessions || []).filter(function (s) { return s.date === d && s.disposition === 'kept'; }).sort(PT.compareSessions);
       label = prettyDate(d) + (d === state.today ? ' · Today' : '');
-      var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
-      body += '<section class="day' + (d === focus ? ' is-selected' : '') + '"><div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + counted + '</span></div>';
+      var finished = list.filter(function (s) { return s.status !== 'free' && sessionEnded(s); }).length;
+      var booked = list.filter(function (s) { return s.status !== 'free' && !sessionEnded(s); }).length;
+      body += '<section class="day' + (d === focus ? ' is-selected' : '') + '"><div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + finished + (booked ? (' + ' + booked + ' booked') : '') + '</span></div>';
       if (!list.length) body += '<div class="meta" style="margin:0 2px 8px">Nothing saved</div>';
       list.forEach(function (s) { body += sessionButton(s); });
       body += '</section>';
@@ -2028,8 +2038,8 @@ var PT = (function () {
     var pay = payFigures(period);
     var body = periodBar();
     if (!period) return shell('Report', body + '<div class="card empty">Set the pay period and the report will use those dates.</div>', '');
-    body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Sessions this period</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + pay.billable.length + '</div>' +
-      '<p class="meta">' + esc(pay.est.tierLabel) + '. ' + (pay.est.sessionsToNext ? (pay.est.sessionsToNext + ' to the next tier.') : 'Top tier.') + ' Free sessions are not counted.</p>' +
+    body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Finished this period</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + pay.billable.length + '</div>' +
+      '<p class="meta">' + esc(pay.est.tierLabel) + '. ' + (pay.est.sessionsToNext ? (pay.est.sessionsToNext + ' to the next tier.') : 'Top tier.') + ' Bookings that have not finished, and free sessions, are not in this number. The period dates stay the gym dates.</p>' +
       payStats(pay) +
       '<p class="meta">Net ' + esc(moneyExact(pay.est.netRevenue)) + ' after ' + esc(String(Math.round(pay.est.netFactor * 100) / 100)) + '%. Quota ' + esc(moneyExact(pay.est.quota)) + ' comes off. Commission revenue ' + esc(moneyExact(pay.est.commRevenue)) + '. Charges ' + esc(money(pay.chargeTotal)) + (pay.est.includeCharges ? ' are in the commission.' : ' stay out of the commission.') + '</p></div>';
     body += '</div><div class="report-people">';
@@ -2037,16 +2047,18 @@ var PT = (function () {
       var list = PT.sessionsForClient(c, state.sessions, state.clients).filter(function (s) {
         return PT.inPeriod(s.date, period, state.today);
       });
-      var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
-      var free = list.length - counted;
-      return { name: c.name, counted: counted, free: free };
-    }).filter(function (r) { return r.counted || r.free; }).sort(function (a, b) { return b.counted - a.counted; });
+      var counted = list.filter(function (s) { return s.status !== 'free' && sessionEnded(s); }).length;
+      var booked = list.filter(function (s) { return s.status !== 'free' && !sessionEnded(s); }).length;
+      var free = list.filter(function (s) { return s.status === 'free'; }).length;
+      return { name: c.name, counted: counted, booked: booked, free: free };
+    }).filter(function (r) { return r.counted || r.booked || r.free; }).sort(function (a, b) { return b.counted - a.counted; });
     body += '<h2>By client</h2>';
     if (!rows.length) body += '<div class="card empty">No sessions in these dates.</div>';
     else {
       body += '<div class="client-grid">';
       rows.forEach(function (r) {
-        body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + '</b></div>' +
+        body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + ' finished</b></div>' +
+          (r.booked ? '<div class="meta">' + r.booked + ' booked, not finished</div>' : '') +
           (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</div>';
       });
       body += '</div>';
