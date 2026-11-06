@@ -147,7 +147,9 @@ var PT = (function () {
       sessionsLeft: left === '' ? '' : String(left),
       value: asAmountString(value),
       startDate: p.startDate ? String(p.startDate).slice(0, 10) : '',
-      note: p.note != null ? String(p.note) : ''
+      note: p.note != null ? String(p.note) : '',
+      balanceMode: p.balanceMode === 'manual' ? 'manual' : (p.balanceMode === 'auto' ? 'auto' : ''),
+      balanceSetAt: p.balanceSetAt ? String(p.balanceSetAt).slice(0, 10) : ''
     };
   }
   function sortPackages(packages) {
@@ -524,9 +526,15 @@ var PT = (function () {
   function packageReady(pkg) {
     return !!(pkg && String(pkg.sessions) !== '' && Number(pkg.sessions) > 0);
   }
+  function balanceIsManual(pkg) {
+    if (!pkg) return false;
+    if (pkg.balanceMode === 'auto') return false;
+    if (pkg.balanceMode === 'manual') return true;
+    return filledAmount(pkg.sessionsLeft);
+  }
   function openingLeft(pkg) {
     if (!pkg) return 0;
-    if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
+    if (balanceIsManual(pkg)) return Number(pkg.sessionsLeft) || 0;
     return Number(pkg.sessions) || 0;
   }
   function currentRemaining(client, sessions, allClients, now) {
@@ -659,40 +667,63 @@ var PT = (function () {
   }
   function saveClientPackage(client, fields, sessions, allClients) {
     fields = fields || {};
-    var before = currentPackage(client && client.packages);
     var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
     if (fields.name && normName(fields.name) !== normName(next.name)) {
       var renamed = renameClient([next], next.id, fields.name);
       next = renamed[0];
     }
     var pkg = currentPackage(next.packages);
-    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], arguments[4]);
-    var explicitLeft = filledAmount(fields.sessionsLeft);
-    var explicitSize = filledAmount(fields.sessions);
-    var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
-    var packages = [], i, copy, desired;
+    var now = arguments[4];
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], now);
+    var manual = fields.balanceManual === true || fields.balanceManual === 'yes' || fields.balanceManual === 'true';
+    var packages = [], i, copy, desired, clock;
     for (i = 0; i < next.packages.length; i++) {
       if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
       copy = normalizePackage(next.packages[i]);
-      if (explicitLeft) {
+      if (manual) {
+        if (!filledAmount(fields.sessionsLeft)) throw new Error('Type the balance to keep.');
         desired = Number(fields.sessionsLeft);
         if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
         copy.sessionsLeft = String(desired + counted);
-      } else if (fields.mode === 'renew' || (explicitSize && !hadSize)) {
+        copy.balanceMode = 'manual';
+        clock = asClock(now);
+        copy.balanceSetAt = clock ? clock.today : '';
+      } else {
         copy.sessionsLeft = '';
-      } else if (before && filledAmount(before.sessionsLeft)) {
-        copy.sessionsLeft = String(before.sessionsLeft);
+        copy.balanceMode = 'auto';
+        copy.balanceSetAt = '';
       }
       packages.push(copy);
     }
     return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function packageFormDefaults(client, sessions, allClients, now) {
+    var pkg = currentPackage(client && client.packages);
+    var st = currentRemaining(client, sessions, allClients || [client], now);
+    var legacy = !!(pkg && pkg.balanceMode !== 'auto' && filledAmount(pkg.sessionsLeft));
+    return {
+      name: client ? client.name : '',
+      sessions: pkg && filledAmount(pkg.sessions) ? String(pkg.sessions) : '',
+      sessionsLeft: '',
+      value: pkg && filledAmount(pkg.value) ? String(pkg.value) : '',
+      startDate: pkg && pkg.startDate ? pkg.startDate : '',
+      note: pkg && pkg.note ? pkg.note : '',
+      balanceManual: false,
+      manualAvailable: legacy || !!(pkg && pkg.balanceMode === 'manual'),
+      previewLeft: st.remaining,
+      previewUsed: st.used,
+      previewSize: st.total
+    };
   }
   function mergePackageRecord(kept, incoming) {
     var base = normalizePackage(kept || {});
     var next = normalizePackage(incoming || {}, base.id);
     if (!filledAmount(next.sessions) && filledAmount(base.sessions)) next.sessions = String(base.sessions);
     if (!filledAmount(next.value) && filledAmount(base.value)) next.value = String(base.value);
-    if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (next.balanceMode === 'auto') next.sessionsLeft = '';
+    else if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (!next.balanceMode && base.balanceMode) next.balanceMode = base.balanceMode;
+    if (!next.balanceSetAt && base.balanceSetAt && next.balanceMode !== 'auto') next.balanceSetAt = base.balanceSetAt;
     if (!filledAmount(next.startDate) && filledAmount(base.startDate)) next.startDate = String(base.startDate);
     if (!filledAmount(next.note) && filledAmount(base.note)) next.note = String(base.note);
     if (!next.id && base.id) next.id = base.id;
@@ -1261,6 +1292,7 @@ var PT = (function () {
     savePeriods: savePeriods,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
+    packageFormDefaults: packageFormDefaults,
     mergeClientRecord: mergeClientRecord,
     packageReady: packageReady,
     defaultTiers: defaultTiers,

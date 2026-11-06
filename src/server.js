@@ -510,6 +510,7 @@ function packageFields_(obj) {
     name: clip_(obj.name, 80),
     sessions: obj.sessions,
     sessionsLeft: obj.sessionsLeft,
+    balanceManual: obj.balanceManual === true || obj.balanceManual === 'true' || obj.balanceManual === 'yes',
     value: obj.value,
     startDate: clip_(obj.startDate, 10),
     note: clip_(obj.note, 500)

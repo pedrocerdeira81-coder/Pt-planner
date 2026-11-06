@@ -303,6 +303,7 @@ test('a PT title becomes a client and older sessions stay outside a fresh packag
   const saved = PT.saveClientPackage(result.clients[0], {
     sessions: '10',
     sessionsLeft: '10',
+    balanceManual: true,
     value: '4000',
     startDate: TODAY
   }, result.sessions, result.clients);
@@ -330,10 +331,10 @@ test('a title containing free is not counted, and a title that does not end in P
   const period = { start: '2026-10-29', end: '2026-11-29' };
   let clients = result.clients.map((c) => {
     if (c.name === 'Omar free') {
-      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '8', value: '4000', startDate: '2026-11-01' }, result.sessions, result.clients);
+      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '8', balanceManual: true, value: '4000', startDate: '2026-11-01' }, result.sessions, result.clients);
     }
     if (c.name === 'Freedom') {
-      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '10', value: '2000', startDate: '2026-11-01' }, result.sessions, result.clients);
+      return PT.saveClientPackage(c, { sessions: '10', sessionsLeft: '10', balanceManual: true, value: '2000', startDate: '2026-11-01' }, result.sessions, result.clients);
     }
     return c;
   });
@@ -472,7 +473,7 @@ test('Yusuf package save sticks, deducts each eligible session once, and a blank
   assert.equal(again.clients[0].packages[0].value, '4000');
   assert.equal(PT.currentRemaining(again.clients[0], again.sessions, again.clients, now).used, 1);
   const named = PT.createClient(again.clients, {
-    name: 'Yusuf', sessions: '12', value: '4800', startDate: '2026-11-03', sessionsLeft: '9'
+    name: 'Yusuf', sessions: '12', value: '4800', startDate: '2026-11-03', sessionsLeft: '9', balanceManual: true
   }, again.sessions, again.clients, now);
   assert.equal(named.length, again.clients.length);
   assert.equal(named.find((c) => c.name === 'Yusuf').id, yusuf.id);
@@ -603,6 +604,74 @@ test('a full J Club period keeps booked sessions in the plan and out of earned t
   assert.equal(pack.used, 2);
   assert.equal(pack.remaining, 4);
   assert.equal(pack.used + pack.remaining, pack.total);
+});
+
+test('Fix numbers save uses size minus finished sessions, even if sessions left shows 12', () => {
+  const now = { today: '2026-11-06', time: '16:37' };
+  const yusuf = client({
+    id: 'mw0c6ng7pyjibs', name: 'Yusuf', packageSessions: '12', packageValue: '4080', startDate: '2026-11-05'
+  });
+  yusuf.packages[0].id = 'mw0c6ng7pyjibs-pkg1';
+  yusuf.packages[0].sessionsLeft = '13';
+  yusuf.packages[0].note = 'Split with mira';
+  const sessions = [
+    { eventId: 'nov5', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-05', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'nov26', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-26', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' }
+  ];
+  const before = PT.currentRemaining(yusuf, sessions, [yusuf], now);
+  assert.equal(before.used, 1);
+  assert.equal(before.remaining, 12);
+  const form = PT.packageFormDefaults(yusuf, sessions, [yusuf], now);
+  assert.equal(form.sessions, '12');
+  assert.equal(form.sessionsLeft, '');
+  assert.equal(form.balanceManual, false);
+  assert.equal(form.value, '4080');
+  assert.equal(form.startDate, '2026-11-05');
+  assert.equal(form.note, 'Split with mira');
+  assert.equal(form.manualAvailable, true);
+  const saved = PT.saveClientPackage(yusuf, {
+    name: 'Yusuf',
+    sessions: form.sessions,
+    sessionsLeft: '12',
+    value: '4080',
+    startDate: form.startDate,
+    note: form.note,
+    balanceManual: form.balanceManual,
+    mode: 'edit'
+  }, sessions, [yusuf], now);
+  const after = PT.currentRemaining(saved, sessions, [saved], now);
+  assert.equal(after.total, 12);
+  assert.equal(after.used, 1);
+  assert.equal(after.remaining, 11);
+  assert.equal(saved.packages[0].sessionsLeft, '');
+  assert.equal(saved.packages[0].balanceMode, 'auto');
+  assert.equal(saved.packages[0].value, '4080');
+  const reloaded = PT.packageFormDefaults(saved, sessions, [saved], now);
+  assert.equal(reloaded.sessionsLeft, '');
+  assert.equal(reloaded.previewLeft, 11);
+  const moved = PT.saveClientPackage(saved, {
+    sessions: '12',
+    sessionsLeft: String(reloaded.previewLeft),
+    value: '4080',
+    startDate: '2026-11-04',
+    note: 'Split with mira',
+    balanceManual: false,
+    mode: 'edit'
+  }, sessions, [saved], now);
+  const movedStats = PT.currentRemaining(moved, sessions, [moved], now);
+  assert.equal(movedStats.used, 1);
+  assert.equal(movedStats.remaining, 11);
+  const merged = PT.mergeClientRecord(yusuf, moved);
+  assert.equal(merged.packages[0].balanceMode, 'auto');
+  assert.equal(merged.packages[0].sessionsLeft, '');
+  assert.equal(PT.currentRemaining(merged, sessions, [merged], now).remaining, 11);
+  const byHand = PT.saveClientPackage(saved, {
+    sessions: '12', sessionsLeft: '4', value: '4080', startDate: '2026-11-05',
+    balanceManual: true, mode: 'edit'
+  }, sessions, [saved], now);
+  assert.equal(byHand.packages[0].balanceMode, 'manual');
+  assert.equal(byHand.packages[0].balanceSetAt, '2026-11-06');
+  assert.equal(PT.currentRemaining(byHand, sessions, [byHand], now).remaining, 4);
 });
 
 test('exact names do not let Ali take Alison', () => {

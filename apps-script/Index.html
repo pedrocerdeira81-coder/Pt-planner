@@ -523,7 +523,9 @@ var PT = (function () {
       sessionsLeft: left === '' ? '' : String(left),
       value: asAmountString(value),
       startDate: p.startDate ? String(p.startDate).slice(0, 10) : '',
-      note: p.note != null ? String(p.note) : ''
+      note: p.note != null ? String(p.note) : '',
+      balanceMode: p.balanceMode === 'manual' ? 'manual' : (p.balanceMode === 'auto' ? 'auto' : ''),
+      balanceSetAt: p.balanceSetAt ? String(p.balanceSetAt).slice(0, 10) : ''
     };
   }
   function sortPackages(packages) {
@@ -900,9 +902,15 @@ var PT = (function () {
   function packageReady(pkg) {
     return !!(pkg && String(pkg.sessions) !== '' && Number(pkg.sessions) > 0);
   }
+  function balanceIsManual(pkg) {
+    if (!pkg) return false;
+    if (pkg.balanceMode === 'auto') return false;
+    if (pkg.balanceMode === 'manual') return true;
+    return filledAmount(pkg.sessionsLeft);
+  }
   function openingLeft(pkg) {
     if (!pkg) return 0;
-    if (pkg.sessionsLeft != null && String(pkg.sessionsLeft) !== '') return Number(pkg.sessionsLeft) || 0;
+    if (balanceIsManual(pkg)) return Number(pkg.sessionsLeft) || 0;
     return Number(pkg.sessions) || 0;
   }
   function currentRemaining(client, sessions, allClients, now) {
@@ -1035,40 +1043,63 @@ var PT = (function () {
   }
   function saveClientPackage(client, fields, sessions, allClients) {
     fields = fields || {};
-    var before = currentPackage(client && client.packages);
     var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
     if (fields.name && normName(fields.name) !== normName(next.name)) {
       var renamed = renameClient([next], next.id, fields.name);
       next = renamed[0];
     }
     var pkg = currentPackage(next.packages);
-    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], arguments[4]);
-    var explicitLeft = filledAmount(fields.sessionsLeft);
-    var explicitSize = filledAmount(fields.sessions);
-    var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
-    var packages = [], i, copy, desired;
+    var now = arguments[4];
+    var counted = packageUsed(next, sessions || [], pkg, allClients || [next], now);
+    var manual = fields.balanceManual === true || fields.balanceManual === 'yes' || fields.balanceManual === 'true';
+    var packages = [], i, copy, desired, clock;
     for (i = 0; i < next.packages.length; i++) {
       if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
       copy = normalizePackage(next.packages[i]);
-      if (explicitLeft) {
+      if (manual) {
+        if (!filledAmount(fields.sessionsLeft)) throw new Error('Type the balance to keep.');
         desired = Number(fields.sessionsLeft);
         if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
         copy.sessionsLeft = String(desired + counted);
-      } else if (fields.mode === 'renew' || (explicitSize && !hadSize)) {
+        copy.balanceMode = 'manual';
+        clock = asClock(now);
+        copy.balanceSetAt = clock ? clock.today : '';
+      } else {
         copy.sessionsLeft = '';
-      } else if (before && filledAmount(before.sessionsLeft)) {
-        copy.sessionsLeft = String(before.sessionsLeft);
+        copy.balanceMode = 'auto';
+        copy.balanceSetAt = '';
       }
       packages.push(copy);
     }
     return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function packageFormDefaults(client, sessions, allClients, now) {
+    var pkg = currentPackage(client && client.packages);
+    var st = currentRemaining(client, sessions, allClients || [client], now);
+    var legacy = !!(pkg && pkg.balanceMode !== 'auto' && filledAmount(pkg.sessionsLeft));
+    return {
+      name: client ? client.name : '',
+      sessions: pkg && filledAmount(pkg.sessions) ? String(pkg.sessions) : '',
+      sessionsLeft: '',
+      value: pkg && filledAmount(pkg.value) ? String(pkg.value) : '',
+      startDate: pkg && pkg.startDate ? pkg.startDate : '',
+      note: pkg && pkg.note ? pkg.note : '',
+      balanceManual: false,
+      manualAvailable: legacy || !!(pkg && pkg.balanceMode === 'manual'),
+      previewLeft: st.remaining,
+      previewUsed: st.used,
+      previewSize: st.total
+    };
   }
   function mergePackageRecord(kept, incoming) {
     var base = normalizePackage(kept || {});
     var next = normalizePackage(incoming || {}, base.id);
     if (!filledAmount(next.sessions) && filledAmount(base.sessions)) next.sessions = String(base.sessions);
     if (!filledAmount(next.value) && filledAmount(base.value)) next.value = String(base.value);
-    if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (next.balanceMode === 'auto') next.sessionsLeft = '';
+    else if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (!next.balanceMode && base.balanceMode) next.balanceMode = base.balanceMode;
+    if (!next.balanceSetAt && base.balanceSetAt && next.balanceMode !== 'auto') next.balanceSetAt = base.balanceSetAt;
     if (!filledAmount(next.startDate) && filledAmount(base.startDate)) next.startDate = String(base.startDate);
     if (!filledAmount(next.note) && filledAmount(base.note)) next.note = String(base.note);
     if (!next.id && base.id) next.id = base.id;
@@ -1637,6 +1668,7 @@ var PT = (function () {
     savePeriods: savePeriods,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
+    packageFormDefaults: packageFormDefaults,
     mergeClientRecord: mergeClientRecord,
     packageReady: packageReady,
     defaultTiers: defaultTiers,
@@ -2180,12 +2212,21 @@ var PT = (function () {
     render();
   }
 
-  function payFields(pkg, left) {
-    return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg && pkg.sessions ? pkg.sessions : '') + '">' +
-      '<label>Sessions left</label><input data-field="sessionsLeft" inputmode="numeric" value="' + esc(left) + '">' +
-      '<label>Package value (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg && pkg.value ? pkg.value : '') + '">' +
-      '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
-      '<label>Notes</label><input data-field="note" value="' + esc(pkg && pkg.note ? pkg.note : '') + '">';
+  function payFields(form) {
+    form = form || {};
+    var preview = form.previewSize
+      ? ('<p class="meta">From the calendar: ' + form.previewLeft + ' left (' + form.previewSize + ' minus ' + form.previewUsed + ' finished since the start).</p>')
+      : '';
+    var legacy = form.manualAvailable
+      ? '<p class="meta">A hand balance is already saved. Leave the box off and tap Save to use the calendar count. Turn it on only to keep a different number.</p>'
+      : '';
+    return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(form.sessions || '') + '">' +
+      '<label>Package value (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(form.value || '') + '">' +
+      '<label>Starts</label><input data-field="start" type="date" value="' + esc(form.startDate || state.today) + '">' +
+      '<label>Notes</label><input data-field="note" value="' + esc(form.note || '') + '">' +
+      preview + legacy +
+      '<label class="check"><input data-field="balanceManual" type="checkbox"> Set a different balance</label>' +
+      '<label>Balance to show now</label><input data-field="sessionsLeft" inputmode="numeric" value="" placeholder="Only if the box above is on">';
   }
   function readPackage(root) {
     return {
@@ -2194,17 +2235,18 @@ var PT = (function () {
       sessionsLeft: field('sessionsLeft', root),
       value: field('value', root),
       startDate: field('start', root),
-      note: field('note', root)
+      note: field('note', root),
+      balanceManual: field('balanceManual', root) === true
     };
   }
   function openClientForm(c) {
     ui.error = '';
-    var pkg = c ? PT.currentPackage(c.packages) : null;
-    var st = c ? PT.currentRemaining(c, state.sessions, state.clients, viewClock()) : null;
-    var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
-    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Leave sessions left empty the first time to subtract those finished sessions from the package size. A number you type there is the balance to show now, and it is kept.</p>' +
+    var form = c ? PT.packageFormDefaults(c, state.sessions, state.clients, viewClock()) : {
+      sessions: '', value: '', startDate: state.today, note: '', previewLeft: '', previewUsed: 0, previewSize: '', manualAvailable: false
+    };
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Saving uses the package size minus those finished sessions. Turn on “Set a different balance” only when you want a number kept by hand.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
-      payFields(pkg, left) +
+      payFields(form) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
     render();
   }
@@ -2213,8 +2255,8 @@ var PT = (function () {
     var c = clientById(id);
     if (!c) return;
     ui.error = '';
-    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Only sessions on or after the new start date count.</p>' +
-      payFields(null, '') +
+    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Only finished sessions on or after the new start date are used. The new balance is the new size minus those sessions.</p>' +
+      payFields({ startDate: state.today }) +
       '<button type="button" class="primary" data-act="save-renew" data-id="' + esc(c.id) + '">Save renewal</button>';
     render();
   }

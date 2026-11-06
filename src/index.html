@@ -858,12 +858,21 @@ a { color: var(--green); }
     render();
   }
 
-  function payFields(pkg, left) {
-    return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(pkg && pkg.sessions ? pkg.sessions : '') + '">' +
-      '<label>Sessions left</label><input data-field="sessionsLeft" inputmode="numeric" value="' + esc(left) + '">' +
-      '<label>Package value (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(pkg && pkg.value ? pkg.value : '') + '">' +
-      '<label>Starts</label><input data-field="start" type="date" value="' + esc((pkg && pkg.startDate) || state.today) + '">' +
-      '<label>Notes</label><input data-field="note" value="' + esc(pkg && pkg.note ? pkg.note : '') + '">';
+  function payFields(form) {
+    form = form || {};
+    var preview = form.previewSize
+      ? ('<p class="meta">From the calendar: ' + form.previewLeft + ' left (' + form.previewSize + ' minus ' + form.previewUsed + ' finished since the start).</p>')
+      : '';
+    var legacy = form.manualAvailable
+      ? '<p class="meta">A hand balance is already saved. Leave the box off and tap Save to use the calendar count. Turn it on only to keep a different number.</p>'
+      : '';
+    return '<label>Sessions in the package</label><input data-field="sessions" inputmode="numeric" value="' + esc(form.sessions || '') + '">' +
+      '<label>Package value (AED)</label><input data-field="value" inputmode="decimal" value="' + esc(form.value || '') + '">' +
+      '<label>Starts</label><input data-field="start" type="date" value="' + esc(form.startDate || state.today) + '">' +
+      '<label>Notes</label><input data-field="note" value="' + esc(form.note || '') + '">' +
+      preview + legacy +
+      '<label class="check"><input data-field="balanceManual" type="checkbox"> Set a different balance</label>' +
+      '<label>Balance to show now</label><input data-field="sessionsLeft" inputmode="numeric" value="" placeholder="Only if the box above is on">';
   }
   function readPackage(root) {
     return {
@@ -872,17 +881,18 @@ a { color: var(--green); }
       sessionsLeft: field('sessionsLeft', root),
       value: field('value', root),
       startDate: field('start', root),
-      note: field('note', root)
+      note: field('note', root),
+      balanceManual: field('balanceManual', root) === true
     };
   }
   function openClientForm(c) {
     ui.error = '';
-    var pkg = c ? PT.currentPackage(c.packages) : null;
-    var st = c ? PT.currentRemaining(c, state.sessions, state.clients, viewClock()) : null;
-    var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
-    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Leave sessions left empty the first time to subtract those finished sessions from the package size. A number you type there is the balance to show now, and it is kept.</p>' +
+    var form = c ? PT.packageFormDefaults(c, state.sessions, state.clients, viewClock()) : {
+      sessions: '', value: '', startDate: state.today, note: '', previewLeft: '', previewUsed: 0, previewSize: '', manualAvailable: false
+    };
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored. Only a session that has already finished in Dubai time is used. Later bookings stay visible and are not used yet. Saving uses the package size minus those finished sessions. Turn on “Set a different balance” only when you want a number kept by hand.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
-      payFields(pkg, left) +
+      payFields(form) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
     render();
   }
@@ -891,8 +901,8 @@ a { color: var(--green); }
     var c = clientById(id);
     if (!c) return;
     ui.error = '';
-    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Only sessions on or after the new start date count.</p>' +
-      payFields(null, '') +
+    ui.sheet = '<div class="name">Renew ' + esc(c.name) + '</div><p class="meta">The old package stays in the history. Only finished sessions on or after the new start date are used. The new balance is the new size minus those sessions.</p>' +
+      payFields({ startDate: state.today }) +
       '<button type="button" class="primary" data-act="save-renew" data-id="' + esc(c.id) + '">Save renewal</button>';
     render();
   }
