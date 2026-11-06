@@ -553,7 +553,7 @@ test('a package of 6 uses finished Yusuf sessions after 5 Nov and not later Thur
   assert.equal(PT.packageUsed(renewed, sessions, renewed.packages[1], [renewed], { today: '2026-12-04', time: '16:00' }), 1);
 });
 
-test('a full J Club period counts only sessions finished by Dubai time', () => {
+test('a full J Club period keeps booked sessions in the plan and out of earned totals', () => {
   const period = { start: '2026-10-30', end: '2026-11-28' };
   const now = { today: '2026-11-06', time: '16:37' };
   const person = client({
@@ -574,27 +574,31 @@ test('a full J Club period counts only sessions finished by Dubai time', () => {
     row('nov12', '2026-11-12', '12:00', '13:00'),
     row('nov26', '2026-11-26', '12:00', '13:00')
   ];
-  const finished = sessions.filter((s) => PT.sessionHasEnded(s, now));
-  const full = PT.periodBillable([person], sessions, period, now);
-  const cutoff = PT.periodBillable([person], finished, period, now);
-  assert.equal(full.length, 3);
-  assert.equal(cutoff.length, full.length);
-  assert.equal(full.some((s) => s.eventId === 'tonight' || s.eventId === 'nov12' || s.eventId === 'nov26' || s.eventId === 'free'), false);
-  const revenue = PT.periodSessionRevenue([person], sessions, period, now);
-  assert.equal(revenue, PT.periodSessionRevenue([person], finished, period, now));
-  assert.equal(revenue, 300);
+  const finished = sessions.filter((s) => PT.sessionHasEnded(s, now) && s.status !== 'free');
+  const planned = PT.periodBillable([person], sessions, period, now);
+  const done = PT.periodFinished([person], sessions, period, now);
+  assert.equal(planned.length, 6);
+  assert.equal(done.length, 3);
+  assert.equal(done.length, finished.filter((s) => s.date >= period.start && s.date <= period.end).length);
+  assert.equal(done.some((s) => s.eventId === 'tonight' || s.eventId === 'nov12' || s.eventId === 'nov26'), false);
+  const earned = PT.periodSessionRevenue([person], done, period, now);
+  const projected = PT.periodSessionRevenue([person], sessions, period, now);
+  assert.equal(earned, 300);
+  assert.equal(projected, 600);
   const est = PT.commissionEstimate({
-    sessionRevenue: revenue, sessionCount: full.length, chargeTotal: 0,
+    sessionRevenue: earned, sessionCount: done.length, chargeTotal: 0,
     comm: { quota: '0', netFactor: '100', includeCharges: false }
   });
-  const inflated = PT.commissionEstimate({
-    sessionRevenue: 600, sessionCount: 6, chargeTotal: 0,
+  const outlook = PT.commissionEstimate({
+    sessionRevenue: projected, sessionCount: planned.length, chargeTotal: 0,
     comm: { quota: '0', netFactor: '100', includeCharges: false }
   });
   assert.equal(est.sessionCount, 3);
   assert.equal(est.tierRate, 0.45);
   assert.equal(est.commission, 135);
-  assert.notEqual(est.commission, inflated.commission);
+  assert.equal(outlook.sessionCount, 6);
+  assert.equal(outlook.commission, 270);
+  assert.notEqual(est.commission, outlook.commission);
   const pack = PT.currentRemaining(person, sessions, [person], now);
   assert.equal(pack.used, 2);
   assert.equal(pack.remaining, 4);

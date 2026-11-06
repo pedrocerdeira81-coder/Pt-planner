@@ -106,7 +106,7 @@ After that, leave it. Around 5:00 Dubai time the same email arrives even if the 
 
 ## Day to day
 
-- **Home** and **Report** count sessions that have already finished in Dubai time. The pay period stays the real J Club dates. A booking that has not finished is marked **Booked** and is not in Finished, the tier, the revenue, or the commission. A free session is faded and is not counted.
+- **Home** and **Report** use the pay-period dates you set. **In period** is every non-free session in those dates, including ones still booked, so you can see what the full gym period will be. **Finished** and **Earned** are only sessions that have already ended in Dubai time. A later booking is marked **Booked**. It stays in the period count and in the projected commission, and it is not earned and does not use a package session. A free session is faded and is not counted.
 - **Week** opens on this week. **Previous day** and **Next day** move one day. The date box jumps to a day. **Today** comes back. **Previous week** and **Next week** move seven days. A day only lists sessions already saved from the calendar. On a client, each session shows its date as well as the time.
 - Tap a session to mark it **Normal**, **Free**, or **Charged**. Free does not use a session. Normal and charged do, once the session has finished in Dubai time and the date is on or after the package start. A later booking stays on the list and is not used yet. If the calendar title contains the word free, the next check marks it Free again.
 - **Renew** keeps the old package in the history. The new one must start after the old one.

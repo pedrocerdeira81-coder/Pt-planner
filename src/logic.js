@@ -425,12 +425,11 @@ var PT = (function () {
     return sessionRate(pkg);
   }
   function periodSessionRevenue(clients, sessions, period, now) {
-    var today = asClock(now);
-    var day = today ? today.today : now;
+    var clock = asClock(now);
+    var day = clock ? clock.today : now;
     var total = 0, list = sessions || [], i, owner;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!sessionHasEnded(list[i], now)) continue;
       if (!inPeriod(list[i].date, period, day)) continue;
       owner = findClient(clients, list[i].clientName);
       if (!owner) continue;
@@ -439,15 +438,22 @@ var PT = (function () {
     return total;
   }
   function periodBillable(clients, sessions, period, now) {
-    var today = asClock(now);
-    var day = today ? today.today : now;
+    var clock = asClock(now);
+    var day = clock ? clock.today : now;
     var out = [], list = sessions || [], i;
     for (i = 0; i < list.length; i++) {
       if (!isBillable(list[i])) continue;
-      if (!sessionHasEnded(list[i], now)) continue;
       if (!inPeriod(list[i].date, period, day)) continue;
       if (!findClient(clients, list[i].clientName)) continue;
       out.push(list[i]);
+    }
+    return out;
+  }
+  function periodFinished(clients, sessions, period, now) {
+    var planned = periodBillable(clients, sessions, period, now);
+    var out = [], i;
+    for (i = 0; i < planned.length; i++) {
+      if (sessionHasEnded(planned[i], now)) out.push(planned[i]);
     }
     return out;
   }
@@ -1279,6 +1285,7 @@ var PT = (function () {
     sessionHasEnded: sessionHasEnded,
     periodSessionRevenue: periodSessionRevenue,
     periodBillable: periodBillable,
+    periodFinished: periodFinished,
     chargeAmount: chargeAmount,
     periodChargeTotal: periodChargeTotal,
     chargeTotalFor: chargeTotalFor,
