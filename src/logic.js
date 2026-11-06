@@ -710,10 +710,96 @@ var PT = (function () {
       note: pkg && pkg.note ? pkg.note : '',
       balanceManual: false,
       manualAvailable: legacy || !!(pkg && pkg.balanceMode === 'manual'),
-      previewLeft: st.remaining,
-      previewUsed: st.used,
+      previewLeft: (pkg && packageReady(pkg)) ? (Number(pkg.sessions) - packageUsed(client, sessions, pkg, allClients || [client], now)) : st.remaining,
+      previewUsed: packageUsed(client, sessions, pkg, allClients || [client], now),
       previewSize: st.total
     };
+  }
+  function legacyBalanceReview(clients, sessions, now, periods) {
+    var clock = asClock(now);
+    var today = clock ? clock.today : '';
+    var win = syncWindow(today, periods || []);
+    var rows = [], i, c, pkg, st, used, size, stored, status, basis, oldLeft, calendarLeft;
+    for (i = 0; i < (clients || []).length; i++) {
+      c = clients[i];
+      pkg = currentPackage(c && c.packages);
+      if (!pkg) continue;
+      st = currentRemaining(c, sessions, clients, now);
+      used = packageUsed(c, sessions, pkg, clients, now);
+      size = Number(pkg.sessions) || 0;
+      stored = filledAmount(pkg.sessionsLeft) ? String(pkg.sessionsLeft) : '';
+      oldLeft = st.remaining;
+      calendarLeft = size - used;
+      if (pkg.balanceMode === 'manual') {
+        status = 'explicit';
+        basis = 'Set by hand' + (pkg.balanceSetAt ? (' on ' + pkg.balanceSetAt) : '') + '. Not changed.';
+      } else if (pkg.balanceMode === 'auto' || !stored) {
+        status = 'auto';
+        basis = 'Already the calendar count.';
+      } else if (Number(stored) === 0) {
+        status = 'kept-zero';
+        basis = 'Saved balance is 0. Left as it is.';
+      } else if (!packageReady(pkg) || !pkg.startDate) {
+        status = 'incomplete';
+        basis = 'Package size or start date is missing, so it cannot be recalculated.';
+      } else if (String(pkg.startDate) < String(win.windowStart)) {
+        status = 'short-history';
+        basis = 'Start ' + pkg.startDate + ' is before the saved calendar window ' + win.windowStart + '. Switching now could miss older sessions. Not selected.';
+      } else {
+        status = 'legacy';
+        basis = 'Saved balance ' + stored + ' is not the package size ' + size + '. Calendar count is ' + size + ' minus ' + used + ' finished since ' + pkg.startDate + ', so ' + calendarLeft + ' left. The saved number is kept until you apply.';
+      }
+      rows.push({
+        clientId: String(c.id),
+        name: c.name,
+        packageId: String(pkg.id),
+        size: size,
+        value: pkg.value || '',
+        startDate: pkg.startDate || '',
+        note: pkg.note || '',
+        storedLeft: stored,
+        oldLeft: oldLeft,
+        calendarUsed: used,
+        calendarLeft: calendarLeft,
+        status: status,
+        selected: status === 'legacy',
+        basis: basis
+      });
+    }
+    return { windowStart: win.windowStart, windowEnd: win.windowEnd, rows: rows };
+  }
+  function applyLegacyBalances(clients, ids, sessions, now, periods) {
+    var review = legacyBalanceReview(clients, sessions, now, periods);
+    var allow = {}, i, id;
+    for (i = 0; i < review.rows.length; i++) {
+      if (review.rows[i].status === 'legacy') allow[review.rows[i].clientId] = true;
+    }
+    var wanted = {}, applied = [], skipped = [];
+    for (i = 0; i < (ids || []).length; i++) wanted[String(ids[i])] = true;
+    var next = [];
+    for (i = 0; i < (clients || []).length; i++) {
+      id = String(clients[i].id);
+      if (!wanted[id]) { next.push(clients[i]); continue; }
+      if (!allow[id]) { skipped.push(id); next.push(clients[i]); continue; }
+      var pkg = currentPackage(clients[i].packages);
+      var packages = [], j, copy;
+      for (j = 0; j < clients[i].packages.length; j++) {
+        if (String(clients[i].packages[j].id) !== String(pkg.id)) { packages.push(clients[i].packages[j]); continue; }
+        copy = normalizePackage(clients[i].packages[j]);
+        copy.sessionsLeft = '';
+        copy.balanceMode = 'auto';
+        copy.balanceSetAt = '';
+        packages.push(copy);
+      }
+      applied.push(id);
+      next.push(withLegacy({
+        id: clients[i].id,
+        name: clients[i].name,
+        aliases: clients[i].aliases || [],
+        packages: packages
+      }));
+    }
+    return { clients: next, applied: applied, skipped: skipped };
   }
   function mergePackageRecord(kept, incoming) {
     var base = normalizePackage(kept || {});
@@ -1293,6 +1379,8 @@ var PT = (function () {
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
     packageFormDefaults: packageFormDefaults,
+    legacyBalanceReview: legacyBalanceReview,
+    applyLegacyBalances: applyLegacyBalances,
     mergeClientRecord: mergeClientRecord,
     packageReady: packageReady,
     defaultTiers: defaultTiers,

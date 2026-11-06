@@ -774,6 +774,24 @@ a { color: var(--green); }
     return shell('Report', body, '');
   }
 
+  function balancesScreen() {
+    var review = PT.legacyBalanceReview(state.clients, state.sessions, viewClock(), (state.settings && state.settings.periods) || []);
+    var body = '<p class="meta">Calendar window used for this check: ' + esc(prettyDate(review.windowStart) || review.windowStart) + ' to ' + esc(prettyDate(review.windowEnd) || review.windowEnd) + '. Apply only switches the ticked rows to size minus finished sessions. Nothing is deleted.</p>';
+    var any = false;
+    review.rows.forEach(function (row) {
+      if (row.status === 'auto') return;
+      any = true;
+      var box = row.selected ? ' checked' : '';
+      var can = row.status === 'legacy';
+      body += '<div class="card"><div class="spread"><b>' + esc(row.name) + '</b><span>' + (can ? '<label class="check"><input type="checkbox" data-balance-id="' + esc(row.clientId) + '"' + box + '> Apply</label>' : esc(row.status === 'explicit' ? 'Kept' : row.status === 'kept-zero' ? 'Zero kept' : row.status === 'short-history' ? 'Needs history' : 'Skipped')) + '</span></div>' +
+        '<p class="meta">Now ' + row.oldLeft + ' left. Calendar ' + row.calendarLeft + ' left (' + row.size + ' minus ' + row.calendarUsed + ' finished).</p>' +
+        '<p class="meta">' + esc(row.basis) + '</p></div>';
+    });
+    if (!any) body += '<div class="card empty">No saved hand balances to review.</div>';
+    else body += '<button type="button" class="primary" data-act="apply-balances">Apply calendar count</button>';
+    return shell('Balances', body, '#settings');
+  }
+
   function chargesScreen() {
     var period = viewedPeriod();
     var list = (state.charges || []).filter(function (ch) { return period && PT.inPeriod(ch.date, period); }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
@@ -829,6 +847,7 @@ a { color: var(--green); }
       tierRows(s.tiers) +
       '<button type="button" class="ghost" data-act="add-tier">Add a tier</button>' +
       '<button type="button" class="primary" data-act="save-settings">Save</button></div>';
+    body += '<div class="card"><b>Saved balances</b><p class="meta">Older packages may still be using a hand balance. Review them once. A zero, a balance set on purpose, and a package that starts before the saved calendar are left alone until you decide.</p><button type="button" class="ghost" data-act="nav" data-go="#balances">Review saved balances</button></div>';
     body += '<div class="card"><b>Morning email</b><p class="meta">Every day around 5:00 (Dubai time) the planner checks the calendar and emails pedrocerdeira81@gmail.com. The subject is exactly “PT Planner daily sync”.</p>' +
       '<button type="button" class="ghost" data-act="email">Email today’s summary</button></div>';
     body += '<div class="card"><b>Home screen</b><ol class="steps"><li>Open this planner in Safari.</li><li>Tap the Share button (the square with the arrow).</li><li>Tap Add to Home Screen.</li><li>Leave the name as PT Planner. If you see Open as Web App, leave it on.</li><li>Tap Add, then tap the new icon.</li></ol></div>';
@@ -1017,6 +1036,9 @@ a { color: var(--green); }
       if (!replaced) state.charges = state.charges.concat([entry]);
     } else if (name === 'apiDeleteCharge') {
       state.charges = (state.charges || []).filter(function (ch) { return String(ch.id) !== String(a.id); });
+    } else if (name === 'apiApplyBalances') {
+      var applied = PT.applyLegacyBalances(state.clients, a.ids || [], state.sessions, viewClock(), (state.settings && state.settings.periods) || []);
+      state.clients = applied.clients;
     } else if (name === 'apiSaveSettings') {
       var comm = PT.normalizeComm(a);
       comm.periods = (state.settings && state.settings.periods) || [];
@@ -1206,6 +1228,14 @@ a { color: var(--green); }
       }]);
       return;
     }
+    if (act === 'apply-balances') {
+      var picked = [];
+      document.querySelectorAll('[data-balance-id]').forEach(function (box) {
+        if (box.checked) picked.push(box.getAttribute('data-balance-id'));
+      });
+      go('apiApplyBalances', [{ ids: picked }]);
+      return;
+    }
     if (act === 'unignore') { go('apiUnignore', [{ name: el.getAttribute('data-name') }]); return; }
     if (act === 'retry-boot') { startApp(); return; }
   }
@@ -1230,6 +1260,7 @@ a { color: var(--green); }
     else if (r.name === 'report') html = reportScreen();
     else if (r.name === 'charges') html = chargesScreen();
     else if (r.name === 'settings') html = settingsScreen();
+    else if (r.name === 'balances') html = balancesScreen();
     else html = homeScreen();
     root.innerHTML = html;
   }

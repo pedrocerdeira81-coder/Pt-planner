@@ -674,6 +674,79 @@ test('Fix numbers save uses size minus finished sessions, even if sessions left 
   assert.equal(PT.currentRemaining(byHand, sessions, [byHand], now).remaining, 4);
 });
 
+test('one review applies legacy balances and leaves zeros, hand balances, and short history', () => {
+  const now = { today: '2026-11-06', time: '16:37' };
+  const periods = [{ id: 'p', start: '2026-10-30', end: '2026-11-28' }];
+  const yusuf = client({ id: 'yusuf', name: 'Yusuf', packageSessions: '12', packageValue: '4080', startDate: '2026-11-05' });
+  yusuf.packages[0].id = 'yusuf-pkg';
+  yusuf.packages[0].sessionsLeft = '13';
+  yusuf.packages[0].note = 'Split with mira';
+  const sherine = client({ id: 'sherine', name: 'Sherine', packageSessions: '10', packageValue: '100', startDate: '2026-11-01' });
+  sherine.packages[0].sessionsLeft = '0';
+  const marked = client({ id: 'marked', name: 'Marked', packageSessions: '8', packageValue: '80', startDate: '2026-11-01' });
+  marked.packages[0].sessionsLeft = '0';
+  marked.packages[0].balanceMode = 'manual';
+  marked.packages[0].balanceSetAt = '2026-11-06';
+  const ready = client({ id: 'ready', name: 'Ready', packageSessions: '8', packageValue: '80', startDate: '2026-11-01' });
+  ready.packages[0].balanceMode = 'auto';
+  ready.packages[0].sessionsLeft = '';
+  const ancient = client({ id: 'ancient', name: 'Ancient', packageSessions: '10', packageValue: '50', startDate: '2025-01-01' });
+  ancient.packages[0].sessionsLeft = '15';
+  let reno = client({ id: 'reno', name: 'Reno', packageSessions: '8', packageValue: '800', startDate: '2026-06-01' });
+  reno.packages[0].sessionsLeft = '5';
+  reno.packages[0].note = 'old note';
+  reno = PT.renewPackage(reno, { sessions: '10', value: '900', startDate: '2026-11-01' });
+  reno.packages[1].sessionsLeft = '14';
+  const sessions = [
+    { eventId: 'nov5', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-05', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'nov26', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-26', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' }
+  ];
+  const clients = [yusuf, sherine, marked, ready, ancient, reno];
+  const form = PT.packageFormDefaults(yusuf, sessions, clients, now);
+  assert.equal(form.previewLeft, 11);
+  assert.equal(form.previewUsed, 1);
+  assert.equal(PT.currentRemaining(yusuf, sessions, clients, now).remaining, 12);
+  const review = PT.legacyBalanceReview(clients, sessions, now, periods);
+  function row(id) { return review.rows.filter((r) => r.clientId === id)[0]; }
+  assert.equal(row('yusuf').selected, true);
+  assert.equal(row('yusuf').oldLeft, 12);
+  assert.equal(row('yusuf').calendarLeft, 11);
+  assert.equal(row('sherine').status, 'kept-zero');
+  assert.equal(row('sherine').selected, false);
+  assert.equal(row('marked').status, 'explicit');
+  assert.equal(row('marked').selected, false);
+  assert.equal(row('ready').status, 'auto');
+  assert.equal(row('ancient').status, 'short-history');
+  assert.equal(row('ancient').selected, false);
+  assert.equal(row('reno').selected, true);
+  assert.equal(row('reno').calendarLeft, 10);
+  const picked = review.rows.filter((r) => r.selected).map((r) => r.clientId);
+  const more = sessions.concat([
+    { eventId: 'nov6', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-06', start: '10:00', end: '11:00', status: 'normal', disposition: 'kept' }
+  ]);
+  const first = PT.applyLegacyBalances(clients, picked.concat(['sherine', 'marked', 'ready', 'ancient']), more, now, periods);
+  assert.deepEqual(first.applied.slice().sort(), ['reno', 'yusuf']);
+  const y2 = first.clients.filter((c) => c.id === 'yusuf')[0];
+  assert.equal(y2.packages[0].value, '4080');
+  assert.equal(y2.packages[0].startDate, '2026-11-05');
+  assert.equal(y2.packages[0].note, 'Split with mira');
+  assert.equal(y2.packages[0].balanceMode, 'auto');
+  assert.equal(PT.currentRemaining(y2, more, first.clients, now).remaining, 10);
+  assert.equal(first.clients.filter((c) => c.id === 'sherine')[0].packages[0].sessionsLeft, '0');
+  assert.equal(first.clients.filter((c) => c.id === 'marked')[0].packages[0].balanceMode, 'manual');
+  assert.equal(first.clients.filter((c) => c.id === 'marked')[0].packages[0].sessionsLeft, '0');
+  assert.equal(first.clients.filter((c) => c.id === 'ancient')[0].packages[0].sessionsLeft, '15');
+  const old = first.clients.filter((c) => c.id === 'reno')[0].packages[0];
+  assert.equal(old.sessionsLeft, '5');
+  assert.equal(old.note, 'old note');
+  assert.equal(old.value, '800');
+  assert.equal(old.startDate, '2026-06-01');
+  const second = PT.applyLegacyBalances(first.clients, picked, more, now, periods);
+  assert.equal(second.applied.length, 0);
+  assert.equal(PT.currentRemaining(second.clients.filter((c) => c.id === 'yusuf')[0], more, second.clients, now).remaining, 10);
+  assert.equal(second.clients.length, clients.length);
+});
+
 test('exact names do not let Ali take Alison', () => {
   assert.equal(PT.namesMatch('Ali', 'Alison'), false);
   assert.equal(PT.namesMatch('Jean  Pierre', 'jean pierre'), true);

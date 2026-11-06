@@ -91,6 +91,24 @@ function apiSaveClient(obj) {
   });
 }
 
+function apiApplyBalances(obj) {
+  return withLock_(function () {
+    assertOwner_();
+    obj = obj || {};
+    var clients = readClients_();
+    var sessions = readSessionsAll_();
+    var clock = dubaiClock_();
+    var periods = [];
+    try { periods = phoneSettings_().periods || []; } catch (e) { periods = []; }
+    var result = PT.applyLegacyBalances(clients, obj.ids || [], sessions, clock, periods);
+    writeClients_(result.clients);
+    var state = publicState_();
+    state.balanceApplied = result.applied;
+    state.balanceSkipped = result.skipped;
+    return state;
+  });
+}
+
 function apiDeleteClient(obj) {
   return withLock_(function () {
     assertOwner_();
