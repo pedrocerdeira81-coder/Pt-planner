@@ -298,6 +298,11 @@ button:disabled { opacity: .35; }
 .err { color: var(--red); font-size: 14px; font-weight: 650; margin-top: 8px; }
 .weekbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .weekbar b { white-space: nowrap; }
+.daybar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.daybar .ghost { width: auto; flex: 1 1 auto; min-height: 44px; margin-top: 0; padding: 0 10px; }
+.daybar input[type="date"] { flex: 1 1 150px; min-width: 140px; min-height: 44px; }
+.day.is-selected { outline: 2px solid var(--green); border-radius: 16px; padding: 4px; }
+.when .meta { display: block; font-size: 11px; font-weight: 700; }
 .check { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 15px; }
 .check input { width: 22px; height: 22px; min-height: 0; }
 .pair { display: flex; gap: 8px; }
@@ -943,22 +948,46 @@ var PT = (function () {
     var packages = (client.packages || []).concat([pkg]);
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: packages });
   }
+  function filledAmount(v) {
+    return v != null && String(v) !== '';
+  }
   function updateCurrentPackage(client, fields) {
+    fields = fields || {};
     var packages = (client.packages && client.packages.length) ? client.packages : [normalizePackage({
       sessions: '', value: '', startDate: ''
     }, String(client.id || 'c') + '-pkg1')];
     var cur = currentPackage(packages);
-    var nextPkgs = [], i;
+    var nextPkgs = [], i, prev, merged;
     for (i = 0; i < packages.length; i++) {
       if (String(packages[i].id) !== String(cur.id)) { nextPkgs.push(packages[i]); continue; }
-      nextPkgs.push(normalizePackage(Object.assign({}, packages[i], fields, { id: packages[i].id }), packages[i].id));
+      prev = packages[i];
+      merged = {
+        id: prev.id,
+        sessions: filledAmount(fields.sessions) ? fields.sessions : prev.sessions,
+        sessionsLeft: prev.sessionsLeft,
+        value: filledAmount(fields.value) ? fields.value : prev.value,
+        startDate: filledAmount(fields.startDate) ? fields.startDate : prev.startDate,
+        note: fields.note != null ? fields.note : prev.note
+      };
+      nextPkgs.push(normalizePackage(merged, prev.id));
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
   function createClient(clients, fields, sessions, allClients) {
     var name = collapseSpace(fields && fields.name);
-    assertClientName(clients, name);
+    if (!name) throw new Error('Add a name.');
     if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
+    var pool = allClients || clients || [];
+    var existing = findClient(clients, name);
+    if (existing) {
+      var updated = saveClientPackage(existing, fields, sessions, pool);
+      var replaced = [], n;
+      for (n = 0; n < (clients || []).length; n++) {
+        replaced.push(String(clients[n].id) === String(existing.id) ? updated : clients[n]);
+      }
+      return replaced;
+    }
+    assertClientName(clients, name);
     var shell = migrateClient({
       id: fields.id || uid(),
       name: name,
@@ -969,11 +998,12 @@ var PT = (function () {
       note: fields.note || '',
       aliases: []
     });
-    var saved = saveClientPackage(shell, fields, sessions || [], allClients || (clients || []).concat([shell]));
+    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]));
     return (clients || []).concat([saved]);
   }
   function saveClientPackage(client, fields, sessions, allClients) {
     fields = fields || {};
+    var before = currentPackage(client && client.packages);
     var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
     if (fields.name && normName(fields.name) !== normName(next.name)) {
       var renamed = renameClient([next], next.id, fields.name);
@@ -981,16 +1011,69 @@ var PT = (function () {
     }
     var pkg = currentPackage(next.packages);
     var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
-    var desired = (fields.sessionsLeft === '' || fields.sessionsLeft == null) ? (Number(fields.sessions) || 0) : Number(fields.sessionsLeft);
-    if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
-    var packages = [], i;
+    var explicitLeft = filledAmount(fields.sessionsLeft);
+    var explicitSize = filledAmount(fields.sessions);
+    var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
+    var packages = [], i, copy, desired;
     for (i = 0; i < next.packages.length; i++) {
       if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
-      var copy = normalizePackage(next.packages[i]);
-      copy.sessionsLeft = String(desired + counted);
+      copy = normalizePackage(next.packages[i]);
+      if (explicitLeft) {
+        desired = Number(fields.sessionsLeft);
+        if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
+        copy.sessionsLeft = String(desired + counted);
+      } else if (fields.mode === 'renew' || (explicitSize && !hadSize)) {
+        copy.sessionsLeft = '';
+      } else if (before && filledAmount(before.sessionsLeft)) {
+        copy.sessionsLeft = String(before.sessionsLeft);
+      }
       packages.push(copy);
     }
     return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function mergePackageRecord(kept, incoming) {
+    var base = normalizePackage(kept || {});
+    var next = normalizePackage(incoming || {}, base.id);
+    if (!filledAmount(next.sessions) && filledAmount(base.sessions)) next.sessions = String(base.sessions);
+    if (!filledAmount(next.value) && filledAmount(base.value)) next.value = String(base.value);
+    if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (!filledAmount(next.startDate) && filledAmount(base.startDate)) next.startDate = String(base.startDate);
+    if (!filledAmount(next.note) && filledAmount(base.note)) next.note = String(base.note);
+    if (!next.id && base.id) next.id = base.id;
+    return normalizePackage(next, next.id || base.id);
+  }
+  function mergeClientRecord(existing, incoming) {
+    if (!existing) return migrateClient(incoming);
+    if (!incoming) return migrateClient(existing);
+    var ex = migrateClient(existing);
+    var inc = migrateClient(incoming);
+    var exPkgs = ex.packages || [];
+    var inPkgs = inc.packages || [];
+    var used = {}, merged = [], i, j, found;
+    for (i = 0; i < inPkgs.length; i++) {
+      found = null;
+      for (j = 0; j < exPkgs.length; j++) {
+        if (String(exPkgs[j].id) === String(inPkgs[i].id)) {
+          found = exPkgs[j];
+          used[String(exPkgs[j].id)] = true;
+          break;
+        }
+      }
+      merged.push(mergePackageRecord(found, inPkgs[i]));
+    }
+    for (j = 0; j < exPkgs.length; j++) {
+      if (used[String(exPkgs[j].id)]) continue;
+      if (filledAmount(exPkgs[j].sessions) || filledAmount(exPkgs[j].value) || filledAmount(exPkgs[j].sessionsLeft)) {
+        merged.push(normalizePackage(exPkgs[j]));
+      }
+    }
+    var aliases = (inc.aliases && inc.aliases.length) ? inc.aliases : (ex.aliases || []);
+    return withLegacy({
+      id: inc.id || ex.id,
+      name: inc.name || ex.name,
+      aliases: aliases,
+      packages: merged.length ? merged : exPkgs
+    });
   }
   function blankAutoClient(name, today) {
     return migrateClient({
@@ -1521,6 +1604,7 @@ var PT = (function () {
     savePeriods: savePeriods,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
+    mergeClientRecord: mergeClientRecord,
     packageReady: packageReady,
     defaultTiers: defaultTiers,
     normalizeTiers: normalizeTiers,
@@ -1691,10 +1775,12 @@ var PT = (function () {
     return el.value;
   }
 
-  function sessionButton(s) {
+  function sessionButton(s, withDate) {
     var free = s.status === 'free';
+    var when = '<b>' + esc(prettyTime(s.start, s.allDay)) + '</b>';
+    if (withDate) when = '<span class="meta">' + esc(prettyDate(s.date) || s.date || '') + '</span>' + when;
     return '<button type="button" class="row' + (free ? ' is-free' : '') + '" data-act="session" data-id="' + esc(s.eventId) + '">' +
-      '<div class="when"><b>' + esc(prettyTime(s.start, s.allDay)) + '</b></div>' +
+      '<div class="when">' + when + '</div>' +
       '<div class="grow"><div class="name">' + esc(s.clientName) + '</div>' +
       (s.note ? '<div class="note">' + esc(s.note) + '</div>' : '') +
       '</div><span class="tag ' + esc(s.status || 'normal') + '">' + statusLabel(s.status) + '</span></button>';
@@ -1782,7 +1868,7 @@ var PT = (function () {
     var period = viewedPeriod();
     var pay = payFigures(period);
     var lead = periodBar();
-    lead += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + '</p>';
+    lead += '<p class="sub" style="margin:12px 0">' + esc(state.lastSync ? ('Last check ' + state.lastSync) : 'Not checked yet') + (state.source && state.source.id ? (' · sheet ' + state.source.id) : '') + '</p>';
     lead += payStats(pay);
     lead += '<button type="button" class="primary" data-act="sync">Update from Calendar</button>';
     var todayCount = todays.filter(function (s) { return s.status !== 'free'; }).length;
@@ -1813,23 +1899,29 @@ var PT = (function () {
     return shell(longDate(today), body, '');
   }
 
+  function selectedDay() {
+    var day = ui.day || state.today;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) day = state.today;
+    return day;
+  }
   function weekScreen() {
-    var start = PT.addDaysYmd(PT.mondayOf(state.today), (ui.weekOffset || 0) * 7);
+    var focus = selectedDay();
+    var start = PT.mondayOf(focus);
     var end = PT.addDaysYmd(start, 6);
-    var a = parseYmd(start), b = parseYmd(end);
-    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    var range = a.getUTCMonth() === b.getUTCMonth()
-      ? (a.getUTCDate() + '–' + b.getUTCDate() + ' ' + months[a.getUTCMonth()])
-      : (prettyDate(start) + ' – ' + prettyDate(end));
-    var body = '<div class="weekbar"><button type="button" class="ghost small" data-act="week" data-id="-1">Previous</button><b>' + esc(range) + '</b><button type="button" class="ghost small" data-act="week" data-id="1">Next</button></div><div class="week-grid">';
+    var body = '<div class="daybar"><button type="button" class="ghost" data-act="day" data-id="-1">Previous day</button>' +
+      '<input data-field="browse-day" type="date" aria-label="Choose a day" value="' + esc(focus) + '">' +
+      '<button type="button" class="ghost" data-act="day" data-id="today">Today</button>' +
+      '<button type="button" class="ghost" data-act="day" data-id="1">Next day</button></div>' +
+      '<div class="weekbar"><button type="button" class="ghost small" data-act="day" data-id="-7">Previous week</button><b>' + esc(prettyDate(start) + ' – ' + prettyDate(end)) + '</b><button type="button" class="ghost small" data-act="day" data-id="7">Next week</button></div>' +
+      '<p class="meta">The number on a day leaves free sessions out. Only sessions already saved from the calendar are here.</p><div class="week-grid">';
     var d, i, list, label;
     for (i = 0; i < 7; i++) {
       d = PT.addDaysYmd(start, i);
       list = (state.sessions || []).filter(function (s) { return s.date === d && s.disposition === 'kept'; }).sort(PT.compareSessions);
       label = prettyDate(d) + (d === state.today ? ' · Today' : '');
       var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
-      body += '<section class="day"><div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + counted + '</span></div>';
-      if (!list.length) body += '<div class="meta" style="margin:0 2px 8px">Nothing</div>';
+      body += '<section class="day' + (d === focus ? ' is-selected' : '') + '"><div class="day-head"><b class="' + (d === state.today ? 'today-mark' : '') + '">' + esc(label) + '</b><span class="meta">' + counted + '</span></div>';
+      if (!list.length) body += '<div class="meta" style="margin:0 2px 8px">Nothing saved</div>';
       list.forEach(function (s) { body += sessionButton(s); });
       body += '</section>';
     }
@@ -1873,7 +1965,14 @@ var PT = (function () {
     var sessions = PT.sessionsForClient(c, state.sessions, state.clients).slice().reverse();
     body += '<h2>Sessions</h2>';
     if (!sessions.length) body += '<div class="card empty">No kept sessions yet.</div>';
-    sessions.slice(0, 30).forEach(function (s) { body += sessionButton(s); });
+    var lastDay = '';
+    sessions.slice(0, 40).forEach(function (s) {
+      if (s.date !== lastDay) {
+        body += '<div class="day-head"><b>' + esc(prettyDate(s.date) || s.date) + (s.date === state.today ? ' · Today' : '') + '</b></div>';
+        lastDay = s.date;
+      }
+      body += sessionButton(s);
+    });
     var charges = (state.charges || []).filter(function (ch) { return String(ch.clientId) === String(c.id); });
     body += '<h2>Charges</h2>';
     if (!charges.length) body += '<div class="card empty">No AED charges.</div>';
@@ -1961,7 +2060,15 @@ var PT = (function () {
     var s = state.settings || {};
     var net = (s.netFactor != null && s.netFactor !== '') ? s.netFactor : PT.normalizeComm({}).netFactor;
     var quota = (s.quota != null && s.quota !== '') ? s.quota : '7758';
-    var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div><div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on Home and Report</label>' +
+    var src = state.source || {};
+    var body = '<div class="name" style="font-size:28px;font-family:ui-serif,Georgia,serif;margin-bottom:8px">Settings</div>';
+    if (src.id || src.code) {
+      body += '<div class="card"><b>Where this copy saves</b><p class="meta">This screen reads one Google Sheet, the one bound to the script you opened. A different file named PT Planner is not this copy.</p>' +
+        '<p class="meta">Spreadsheet id ' + esc(src.id || 'unknown') + (src.name ? (' · ' + esc(src.name)) : '') + '</p>' +
+        (src.url ? '<p class="meta"><a href="' + esc(src.url) + '">Open that spreadsheet</a></p>' : '') +
+        '<p class="meta">Code ' + esc(src.code || '') + '</p></div>';
+    }
+    body += '<div class="card"><label class="check"><input data-field="showCommission" type="checkbox"' + (s.showCommission !== false ? ' checked' : '') + '> Show commission on Home and Report</label>' +
       '<label class="check"><input data-field="includeCharges" type="checkbox"' + (s.includeCharges ? ' checked' : '') + '> Add AED charges into the commission</label>' +
       '<label>Quota for a pay period (AED)</label><input data-field="quota" inputmode="decimal" value="' + esc(quota) + '">' +
       '<label>Net factor (%)</label><input data-field="netFactor" inputmode="decimal" value="' + esc(net) + '">' +
@@ -2022,7 +2129,7 @@ var PT = (function () {
     var pkg = c ? PT.currentPackage(c.packages) : null;
     var st = c ? PT.currentRemaining(c, state.sessions, state.clients) : null;
     var left = st && st.ready ? String(st.remaining) : (pkg && pkg.sessions ? pkg.sessions : '');
-    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored, so an old calendar does not use up a fresh package.</p>' +
+    ui.sheet = '<div class="name">' + (c ? 'Package' : 'New client') + '</div><p class="meta">Sessions before the start date are ignored, so an old calendar does not use up a fresh package. Leave sessions left empty to subtract every saved session on or after the start date, including ones still ahead on the calendar.</p>' +
       '<label>Name</label><input data-field="name" value="' + esc(c ? c.name : '') + '">' +
       payFields(pkg, left) +
       '<button type="button" class="primary" data-act="save-client" data-id="' + esc(c ? c.id : '') + '">' + (c ? 'Save' : 'Add client') + '</button>';
@@ -2245,7 +2352,13 @@ var PT = (function () {
       else render();
       return;
     }
-    if (act === 'week') { ui.weekOffset = (ui.weekOffset || 0) + Number(el.getAttribute('data-id') || 0); render(); return; }
+    if (act === 'week' || act === 'day') {
+      var step = el.getAttribute('data-id');
+      if (step === 'today') ui.day = state.today;
+      else ui.day = PT.addDaysYmd(selectedDay(), Number(step || 0));
+      render();
+      return;
+    }
     if (act === 'pick-period') {
       var pick = el.getAttribute('data-id');
       if (!pick) return;
@@ -2455,6 +2568,12 @@ var PT = (function () {
   }
 
   document.addEventListener('click', onClick);
+  document.addEventListener('change', function (e) {
+    var input = e.target && e.target.getAttribute && e.target.getAttribute('data-field') === 'browse-day' ? e.target : null;
+    if (!input || !input.value) return;
+    ui.day = input.value;
+    render();
+  });
   window.addEventListener('hashchange', function () { ui.sheet = null; render(); });
 
   function showState(s) {

@@ -4,6 +4,7 @@ var CLIENT_HEADERS = ['id', 'name', 'aliases', 'packages', 'createdAt'];
 var SESSION_HEADERS = ['eventId', 'calendarId', 'title', 'clientName', 'date', 'start', 'end', 'allDay', 'note', 'status', 'statusLocked', 'disposition', 'hidden', 'removed', 'createdAt'];
 var CHARGE_HEADERS = ['id', 'clientId', 'eventId', 'type', 'amount', 'date', 'notes', 'createdAt'];
 var SETTING_HEADERS = ['key', 'value'];
+var CODE_MARK = '2026-11-06-source';
 
 function doGet() {
   return HtmlService.createHtmlOutput(appHtml_())
@@ -22,11 +23,11 @@ function dailySync() {
     runSync_({ email: 'trigger' });
   } catch (err) {
     try {
-      deliver_(PT.buildDailyEmail({
+      deliver_(stampMail_(PT.buildDailyEmail({
         ok: false,
         when: whenLabel_(),
         error: String(err && err.message || err)
-      }));
+      }), {}));
     } catch (ignore) {}
     throw err;
   }
@@ -289,11 +290,11 @@ function runSync_(opts) {
     if (!saved) return { busy: true };
     if (sendMail) {
       try {
-        deliver_(PT.buildSummary({
+        deliver_(stampMail_(PT.buildSummary({
           clients: saved.clients || [],
           sessions: saved.sessions || [],
           settings: phoneSettings_()
-        }, today, whenLabel_()));
+        }, today, whenLabel_()), readBack_(saved)));
       } catch (e2) {}
     }
     rememberTrigger_();
@@ -478,6 +479,7 @@ function publicState_() {
     triggerReady: triggerOn,
     triggerError: getSetting_('triggerError'),
     webAppUrl: url,
+    source: dataSource_(),
     clients: readClients_(),
     sessions: sessions,
     charges: readCharges_(),
@@ -572,9 +574,18 @@ function writeTable_(name, headers, rows) {
     }
     values.push(line);
   }
-  sh.clear();
-  sh.getRange(1, 1, values.length, headers.length).setNumberFormat('@');
-  sh.getRange(1, 1, values.length, headers.length).setValues(values);
+  var range = sh.getRange(1, 1, values.length, headers.length);
+  range.setNumberFormat('@');
+  range.setValues(values);
+  var lastRow = values.length, lastCol = headers.length;
+  try { if (sh.getLastRow) lastRow = sh.getLastRow(); } catch (e) {}
+  try { if (sh.getLastColumn) lastCol = sh.getLastColumn(); } catch (e2) {}
+  if (lastRow > values.length) {
+    try {
+      var extra = sh.getRange(values.length + 1, 1, lastRow - values.length, Math.max(lastCol, headers.length));
+      if (extra.clearContent) extra.clearContent();
+    } catch (e3) {}
+  }
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e5f4ec');
 }
@@ -596,8 +607,13 @@ function readClients_() {
 }
 
 function writeClients_(clients) {
+  var existing = {};
+  try {
+    readClients_().forEach(function (c) { if (c && c.id) existing[String(c.id)] = c; });
+  } catch (e) { existing = {}; }
   var rows = (clients || []).map(function (c) {
-    var clean = PT.migrateClient(c);
+    var prior = c && existing[String(c.id)];
+    var clean = prior ? PT.mergeClientRecord(prior, c) : PT.migrateClient(c);
     return {
       id: clean.id,
       name: clean.name,
@@ -607,6 +623,53 @@ function writeClients_(clients) {
     };
   });
   writeTable_('Clients', CLIENT_HEADERS, rows);
+}
+
+function dataSource_() {
+  var out = { id: '', name: '', url: '', code: CODE_MARK };
+  var ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) { return out; }
+  if (!ss) return out;
+  try { out.id = String(ss.getId() || ''); } catch (e2) {}
+  try { out.name = String(ss.getName() || ''); } catch (e3) {}
+  try { out.url = String(ss.getUrl() || ''); } catch (e4) {}
+  return out;
+}
+
+function readBack_(saved) {
+  var out = { sessions: '', clients: '', readBack: 'not checked' };
+  try {
+    var all = readSessionsAll_();
+    var have = {}, i, missing = 0, wrote = (saved && saved.sessions) || [];
+    out.sessions = all.length;
+    out.clients = readClients_().length;
+    for (i = 0; i < all.length; i++) have[String(all[i].eventId)] = true;
+    for (i = 0; i < wrote.length; i++) {
+      if (wrote[i] && wrote[i].eventId && !have[String(wrote[i].eventId)]) missing++;
+    }
+    out.readBack = missing ? ('missing ' + missing + ' of ' + wrote.length) : 'ok';
+  } catch (e) {
+    out.readBack = 'failed';
+  }
+  return out;
+}
+
+function stampMail_(mail, extra) {
+  var src = dataSource_();
+  extra = extra || {};
+  var block = [
+    'Spreadsheet: ' + (src.name || ''),
+    'Spreadsheet id: ' + (src.id || ''),
+    'Spreadsheet url: ' + (src.url || ''),
+    'Code: ' + src.code,
+    'Sessions stored: ' + (extra.sessions == null ? '' : extra.sessions),
+    'Clients stored: ' + (extra.clients == null ? '' : extra.clients),
+    'Read-back: ' + (extra.readBack || '')
+  ].join('\n');
+  var parts = String(mail && mail.body || '').split('\n');
+  parts.splice(3, 0, block);
+  mail.body = parts.join('\n');
+  return mail;
 }
 
 function readSessionsAll_() {

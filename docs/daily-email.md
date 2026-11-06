@@ -33,6 +33,7 @@ Flagged notes: 2
 - The first line is always `PT Planner daily sync`.
 - The second line is `Status: ok` or `Status: failed`.
 - `When:` is Dubai time.
+- The running script then adds the spreadsheet name, id, and url, the code mark, how many sessions and clients are stored, and a read-back line. That id is the only file that screen is using. A different Drive file with the same name is not that copy.
 - `Period:` is the gym pay period that contains that morning, for example `2026-09-30 to 2026-10-28`. It is not a calendar month. The line is omitted if he has not saved a period yet.
 - `Sessions added` lists kept sessions saved today or yesterday whose appointment is yesterday or later. Only titles that end in PT are sessions. A title that contains the word free, such as `Omar free PT`, is left out of that count. A long first import of older sessions is one line, `Older sessions saved: N`, and those names are not listed.
 - An empty section is `- None`.

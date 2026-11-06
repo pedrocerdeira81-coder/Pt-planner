@@ -441,6 +441,63 @@ test('a recurring series keeps every occurrence and replaces the old shared id',
   assert.equal(charges[0].amount, 200);
 });
 
+test('Yusuf package save sticks, deducts each eligible session once, and a blank write cannot erase it', () => {
+  const made = PT.applySync([], [
+    ev('y1', 'Yusuf PT', '2026-11-05', '', '12:00'),
+    ev('y2', 'Yusuf PT', '2026-11-12', '', '12:00'),
+    ev('free', 'Yusuf free PT', '2026-11-05', '', '13:00'),
+    ev('old', 'Yusuf PT', '2026-10-29', '', '12:00')
+  ], Object.assign({ clients: [], ignored: [], today: '2026-11-06' }, WINDOW));
+  assert.equal(made.clients.length, 2);
+  const yusuf = made.clients.find((c) => c.name === 'Yusuf');
+  assert.equal(yusuf.packages[0].sessions, '');
+  assert.equal(PT.packageReady(yusuf.packages[0]), false);
+  const saved = PT.saveClientPackage(yusuf, {
+    sessions: '10', value: '4000', startDate: '2026-11-03', note: ''
+  }, made.sessions, made.clients);
+  assert.equal(saved.id, yusuf.id);
+  assert.equal(PT.packageReady(saved.packages[0]), true);
+  assert.equal(saved.packages[0].value, '4000');
+  const stats = PT.currentRemaining(saved, made.sessions, made.clients.map((c) => c.id === saved.id ? saved : c));
+  assert.equal(stats.used, 2);
+  assert.equal(stats.remaining, 8);
+  const again = PT.applySync(made.sessions, [
+    ev('y1', 'Yusuf PT', '2026-11-05', '', '12:00'),
+    ev('y2', 'Yusuf PT', '2026-11-12', '', '12:00'),
+    ev('free', 'Yusuf free PT', '2026-11-05', '', '13:00'),
+    ev('old', 'Yusuf PT', '2026-10-29', '', '12:00')
+  ], Object.assign({ clients: [saved], ignored: [], today: '2026-11-06' }, WINDOW));
+  assert.equal(again.clients[0].packages[0].sessions, '10');
+  assert.equal(again.clients[0].packages[0].value, '4000');
+  assert.equal(PT.currentRemaining(again.clients[0], again.sessions, again.clients).used, 2);
+  const named = PT.createClient(again.clients, {
+    name: 'Yusuf', sessions: '12', value: '4800', startDate: '2026-11-03', sessionsLeft: '9'
+  }, again.sessions, again.clients);
+  assert.equal(named.length, again.clients.length);
+  assert.equal(named.find((c) => c.name === 'Yusuf').id, yusuf.id);
+  assert.equal(PT.currentRemaining(named.find((c) => c.name === 'Yusuf'), again.sessions, named).remaining, 9);
+  const wiped = PT.mergeClientRecord(saved, {
+    id: saved.id,
+    name: 'Yusuf',
+    packages: [{ id: saved.packages[0].id, sessions: '', sessionsLeft: '', value: '', startDate: '2026-11-03' }]
+  });
+  assert.equal(wiped.packages[0].sessions, '10');
+  assert.equal(wiped.packages[0].value, '4000');
+  const sherine = PT.mergeClientRecord({
+    id: 'sherine',
+    name: 'Sherine',
+    packages: [{ id: 'sherine-pkg1', sessions: '', sessionsLeft: '0', value: '', startDate: '2026-11-01' }]
+  }, {
+    id: 'sherine',
+    name: 'Sherine',
+    packages: [{ id: 'sherine-pkg1', sessions: '', sessionsLeft: '', value: '', startDate: '2026-11-01' }]
+  });
+  assert.equal(sherine.packages[0].sessionsLeft, '0');
+  assert.equal(PT.addDaysYmd('2026-11-05', -1), '2026-11-04');
+  assert.equal(PT.addDaysYmd('2026-11-01', -1), '2026-10-31');
+  assert.equal(PT.mondayOf('2026-11-05'), '2026-11-02');
+});
+
 test('exact names do not let Ali take Alison', () => {
   assert.equal(PT.namesMatch('Ali', 'Alison'), false);
   assert.equal(PT.namesMatch('Jean  Pierre', 'jean pierre'), true);

@@ -573,22 +573,46 @@ var PT = (function () {
     var packages = (client.packages || []).concat([pkg]);
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: packages });
   }
+  function filledAmount(v) {
+    return v != null && String(v) !== '';
+  }
   function updateCurrentPackage(client, fields) {
+    fields = fields || {};
     var packages = (client.packages && client.packages.length) ? client.packages : [normalizePackage({
       sessions: '', value: '', startDate: ''
     }, String(client.id || 'c') + '-pkg1')];
     var cur = currentPackage(packages);
-    var nextPkgs = [], i;
+    var nextPkgs = [], i, prev, merged;
     for (i = 0; i < packages.length; i++) {
       if (String(packages[i].id) !== String(cur.id)) { nextPkgs.push(packages[i]); continue; }
-      nextPkgs.push(normalizePackage(Object.assign({}, packages[i], fields, { id: packages[i].id }), packages[i].id));
+      prev = packages[i];
+      merged = {
+        id: prev.id,
+        sessions: filledAmount(fields.sessions) ? fields.sessions : prev.sessions,
+        sessionsLeft: prev.sessionsLeft,
+        value: filledAmount(fields.value) ? fields.value : prev.value,
+        startDate: filledAmount(fields.startDate) ? fields.startDate : prev.startDate,
+        note: fields.note != null ? fields.note : prev.note
+      };
+      nextPkgs.push(normalizePackage(merged, prev.id));
     }
     return withLegacy({ id: client.id, name: client.name, aliases: client.aliases || [], packages: nextPkgs });
   }
   function createClient(clients, fields, sessions, allClients) {
     var name = collapseSpace(fields && fields.name);
-    assertClientName(clients, name);
+    if (!name) throw new Error('Add a name.');
     if (fields.sessions == null || fields.sessions === '' || !(Number(fields.sessions) > 0)) throw new Error('Add the number of sessions.');
+    var pool = allClients || clients || [];
+    var existing = findClient(clients, name);
+    if (existing) {
+      var updated = saveClientPackage(existing, fields, sessions, pool);
+      var replaced = [], n;
+      for (n = 0; n < (clients || []).length; n++) {
+        replaced.push(String(clients[n].id) === String(existing.id) ? updated : clients[n]);
+      }
+      return replaced;
+    }
+    assertClientName(clients, name);
     var shell = migrateClient({
       id: fields.id || uid(),
       name: name,
@@ -599,11 +623,12 @@ var PT = (function () {
       note: fields.note || '',
       aliases: []
     });
-    var saved = saveClientPackage(shell, fields, sessions || [], allClients || (clients || []).concat([shell]));
+    var saved = saveClientPackage(shell, fields, sessions || [], pool.concat([shell]));
     return (clients || []).concat([saved]);
   }
   function saveClientPackage(client, fields, sessions, allClients) {
     fields = fields || {};
+    var before = currentPackage(client && client.packages);
     var next = fields.mode === 'renew' ? renewPackage(client, fields) : updateCurrentPackage(client, fields);
     if (fields.name && normName(fields.name) !== normName(next.name)) {
       var renamed = renameClient([next], next.id, fields.name);
@@ -611,16 +636,69 @@ var PT = (function () {
     }
     var pkg = currentPackage(next.packages);
     var counted = packageUsed(next, sessions || [], pkg, allClients || [next]);
-    var desired = (fields.sessionsLeft === '' || fields.sessionsLeft == null) ? (Number(fields.sessions) || 0) : Number(fields.sessionsLeft);
-    if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
-    var packages = [], i;
+    var explicitLeft = filledAmount(fields.sessionsLeft);
+    var explicitSize = filledAmount(fields.sessions);
+    var hadSize = !!(before && filledAmount(before.sessions) && Number(before.sessions) > 0);
+    var packages = [], i, copy, desired;
     for (i = 0; i < next.packages.length; i++) {
       if (String(next.packages[i].id) !== String(pkg.id)) { packages.push(next.packages[i]); continue; }
-      var copy = normalizePackage(next.packages[i]);
-      copy.sessionsLeft = String(desired + counted);
+      copy = normalizePackage(next.packages[i]);
+      if (explicitLeft) {
+        desired = Number(fields.sessionsLeft);
+        if (!isFinite(desired) || desired < 0) throw new Error('Sessions left needs to be zero or more.');
+        copy.sessionsLeft = String(desired + counted);
+      } else if (fields.mode === 'renew' || (explicitSize && !hadSize)) {
+        copy.sessionsLeft = '';
+      } else if (before && filledAmount(before.sessionsLeft)) {
+        copy.sessionsLeft = String(before.sessionsLeft);
+      }
       packages.push(copy);
     }
     return withLegacy({ id: next.id, name: next.name, aliases: next.aliases || [], packages: packages });
+  }
+  function mergePackageRecord(kept, incoming) {
+    var base = normalizePackage(kept || {});
+    var next = normalizePackage(incoming || {}, base.id);
+    if (!filledAmount(next.sessions) && filledAmount(base.sessions)) next.sessions = String(base.sessions);
+    if (!filledAmount(next.value) && filledAmount(base.value)) next.value = String(base.value);
+    if (!filledAmount(next.sessionsLeft) && filledAmount(base.sessionsLeft)) next.sessionsLeft = String(base.sessionsLeft);
+    if (!filledAmount(next.startDate) && filledAmount(base.startDate)) next.startDate = String(base.startDate);
+    if (!filledAmount(next.note) && filledAmount(base.note)) next.note = String(base.note);
+    if (!next.id && base.id) next.id = base.id;
+    return normalizePackage(next, next.id || base.id);
+  }
+  function mergeClientRecord(existing, incoming) {
+    if (!existing) return migrateClient(incoming);
+    if (!incoming) return migrateClient(existing);
+    var ex = migrateClient(existing);
+    var inc = migrateClient(incoming);
+    var exPkgs = ex.packages || [];
+    var inPkgs = inc.packages || [];
+    var used = {}, merged = [], i, j, found;
+    for (i = 0; i < inPkgs.length; i++) {
+      found = null;
+      for (j = 0; j < exPkgs.length; j++) {
+        if (String(exPkgs[j].id) === String(inPkgs[i].id)) {
+          found = exPkgs[j];
+          used[String(exPkgs[j].id)] = true;
+          break;
+        }
+      }
+      merged.push(mergePackageRecord(found, inPkgs[i]));
+    }
+    for (j = 0; j < exPkgs.length; j++) {
+      if (used[String(exPkgs[j].id)]) continue;
+      if (filledAmount(exPkgs[j].sessions) || filledAmount(exPkgs[j].value) || filledAmount(exPkgs[j].sessionsLeft)) {
+        merged.push(normalizePackage(exPkgs[j]));
+      }
+    }
+    var aliases = (inc.aliases && inc.aliases.length) ? inc.aliases : (ex.aliases || []);
+    return withLegacy({
+      id: inc.id || ex.id,
+      name: inc.name || ex.name,
+      aliases: aliases,
+      packages: merged.length ? merged : exPkgs
+    });
   }
   function blankAutoClient(name, today) {
     return migrateClient({
@@ -1151,6 +1229,7 @@ var PT = (function () {
     savePeriods: savePeriods,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
+    mergeClientRecord: mergeClientRecord,
     packageReady: packageReady,
     defaultTiers: defaultTiers,
     normalizeTiers: normalizeTiers,
