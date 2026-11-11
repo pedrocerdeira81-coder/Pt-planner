@@ -740,12 +740,19 @@ a { color: var(--green); }
   }
 
   function reportScreen() {
-    var period = viewedPeriod();
+    var saved = viewedPeriod();
+    var range = PT.reportViewRange(saved, state.today, (ui.reportStart && ui.reportEnd) ? { start: ui.reportStart, end: ui.reportEnd } : null);
+    var period = (range.start && range.end) ? { start: range.start, end: range.end } : null;
     var pay = payFigures(period);
     var body = periodBar();
-    if (!period) return shell('Report', body + '<div class="card empty">Set the pay period and the report will use those dates.</div>', '');
+    if (!saved) return shell('Report', body + '<div class="card empty">Set the pay period and the report will use those dates.</div>', '');
+    var hint = PT.reportNeedsNewPeriod(periodList(), state.today)
+      ? '<p class="meta">Today is after the saved period. Set the next period when you have the new dates.</p>'
+      : '';
+    body += '<div class="card"><div class="pair"><div style="flex:1"><label>From</label><input data-field="report-start" type="date" value="' + esc(range.start) + '"></div><div style="flex:1"><label>To</label><input data-field="report-end" type="date" value="' + esc(range.end) + '"></div></div>' +
+      '<p class="meta">Opens from the saved start through today. A change stays for this visit only and does not change the saved period.</p>' + hint + '</div>';
     body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Sessions in these dates</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + pay.billable.length + '</div>' +
-      '<p class="meta">' + (pay.done || []).length + ' finished · ' + Math.max(0, pay.billable.length - (pay.done || []).length) + ' still booked. Free sessions are not counted. Keep the real gym dates. A shorter end date is only if you want a smaller range.</p>' +
+      '<p class="meta">' + (pay.done || []).length + ' finished · ' + Math.max(0, pay.billable.length - (pay.done || []).length) + ' still booked. Free sessions are not counted.</p>' +
       payStats(pay) +
       '<p class="meta">Net ' + esc(moneyExact(pay.est.netRevenue)) + ' after ' + esc(String(Math.round(pay.est.netFactor * 100) / 100)) + '%. Quota ' + esc(moneyExact(pay.est.quota)) + ' comes off. Commission revenue ' + esc(moneyExact(pay.est.commRevenue)) + '. Charges ' + esc(money(pay.chargeTotal)) + (pay.est.includeCharges ? ' are in the commission.' : ' stay out of the commission.') + '</p></div>';
     body += '</div><div class="report-people">';
@@ -1362,10 +1369,21 @@ a { color: var(--green); }
 
   document.addEventListener('click', onClick);
   document.addEventListener('change', function (e) {
-    var input = e.target && e.target.getAttribute && e.target.getAttribute('data-field') === 'browse-day' ? e.target : null;
-    if (!input || !input.value) return;
-    ui.day = input.value;
-    render();
+    var fieldName = e.target && e.target.getAttribute && e.target.getAttribute('data-field');
+    if (fieldName === 'browse-day') {
+      if (!e.target.value) return;
+      ui.day = e.target.value;
+      render();
+      return;
+    }
+    if (fieldName === 'report-start' || fieldName === 'report-end') {
+      var start = field('report-start');
+      var end = field('report-end');
+      if (!start || !end) return;
+      ui.reportStart = start;
+      ui.reportEnd = end;
+      render();
+    }
   });
   window.addEventListener('hashchange', function () { ui.sheet = null; render(); });
 

@@ -309,6 +309,29 @@ var PT = (function () {
     if (!found) next.push({ id: made, start: start, end: end });
     return { periods: sortPeriods(next), id: found ? id : made };
   }
+  function reportViewRange(period, today, custom) {
+    var savedStart = period && period.start ? String(period.start).slice(0, 10) : '';
+    var savedEnd = period && period.end ? String(period.end).slice(0, 10) : '';
+    today = today ? String(today).slice(0, 10) : '';
+    var customStart = custom && custom.start ? String(custom.start).slice(0, 10) : '';
+    var customEnd = custom && custom.end ? String(custom.end).slice(0, 10) : '';
+    var manual = !!(customStart && customEnd);
+    return {
+      id: period && period.id ? String(period.id) : '',
+      start: manual ? customStart : savedStart,
+      end: manual ? customEnd : today,
+      savedStart: savedStart,
+      savedEnd: savedEnd,
+      manual: manual,
+      pastPeriod: !!(savedEnd && today && today > savedEnd)
+    };
+  }
+  function reportNeedsNewPeriod(periods, today) {
+    today = today ? String(today).slice(0, 10) : '';
+    var active = activePeriod(periods, today);
+    if (!active || !active.end || !today) return false;
+    return today > String(active.end);
+  }
   function syncWindow(today, periods) {
     var ahead = addDaysYmd(today, 60);
     var fallback = addDaysYmd(today, -60);
@@ -1376,6 +1399,8 @@ var PT = (function () {
     sortPeriods: sortPeriods,
     activePeriod: activePeriod,
     savePeriods: savePeriods,
+    reportViewRange: reportViewRange,
+    reportNeedsNewPeriod: reportNeedsNewPeriod,
     syncWindow: syncWindow,
     saveClientPackage: saveClientPackage,
     packageFormDefaults: packageFormDefaults,

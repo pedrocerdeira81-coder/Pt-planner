@@ -386,6 +386,53 @@ test('pay periods are exact dates and the current one is the period that contain
   assert.equal(ancient.windowStart, '2026-07-06');
 });
 
+test('the report opens on the saved start through today and does not rewrite the period', () => {
+  const period = { id: 'p', start: '2026-10-30', end: '2026-11-28' };
+  const periods = [period];
+  const saved = JSON.stringify(periods);
+  const open = PT.reportViewRange(period, '2026-11-11');
+  assert.equal(open.start, '2026-10-30');
+  assert.equal(open.end, '2026-11-11');
+  assert.equal(open.manual, false);
+  assert.equal(open.pastPeriod, false);
+  assert.equal(PT.reportNeedsNewPeriod(periods, '2026-11-11'), false);
+  const late = PT.reportViewRange(period, '2026-12-02');
+  assert.equal(late.start, '2026-10-30');
+  assert.equal(late.end, '2026-12-02');
+  assert.equal(late.pastPeriod, true);
+  assert.equal(PT.reportNeedsNewPeriod(periods, '2026-12-02'), true);
+  const custom = PT.reportViewRange(period, '2026-11-11', { start: '2026-11-01', end: '2026-11-05' });
+  assert.equal(custom.manual, true);
+  assert.equal(custom.start, '2026-11-01');
+  assert.equal(custom.end, '2026-11-05');
+  assert.equal(custom.savedEnd, '2026-11-28');
+  const reopened = PT.reportViewRange(period, '2026-11-11');
+  assert.equal(reopened.start, '2026-10-30');
+  assert.equal(reopened.end, '2026-11-11');
+  assert.equal(reopened.manual, false);
+  assert.equal(JSON.stringify(periods), saved);
+  const person = client({ name: 'Yusuf', packageSessions: '12', packageValue: '4080', startDate: '2026-10-30' });
+  const now = { today: '2026-11-11', time: '18:00' };
+  const sessions = [
+    { eventId: 'before', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-10-29', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'done', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-05', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'today-booked', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-11', start: '19:00', end: '20:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'later', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-19', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'free', clientName: 'Yusuf', title: 'Yusuf PT free', date: '2026-11-06', start: '12:00', end: '13:00', status: 'free', disposition: 'kept' }
+  ];
+  const view = { start: open.start, end: open.end };
+  assert.deepEqual(PT.periodBillable([person], sessions, view, now).map((s) => s.eventId), ['done', 'today-booked']);
+  assert.deepEqual(PT.periodFinished([person], sessions, view, now).map((s) => s.eventId), ['done']);
+  assert.deepEqual(PT.periodBillable([person], sessions, period, now).map((s) => s.eventId), ['done', 'today-booked', 'later']);
+  assert.equal(PT.packageUsed(person, sessions, PT.currentPackage(person.packages), [person], now), 1);
+  const added = PT.savePeriods(periods, { start: '2026-11-29', end: '2026-12-28' });
+  assert.equal(PT.reportNeedsNewPeriod(added.periods, '2026-12-02'), false);
+  const nextOpen = PT.reportViewRange(PT.activePeriod(added.periods, '2026-12-02'), '2026-12-02');
+  assert.equal(nextOpen.start, '2026-11-29');
+  assert.equal(nextOpen.end, '2026-12-02');
+  assert.equal(period.end, '2026-11-28');
+});
+
 test('a recurring series keeps every occurrence and replaces the old shared id', () => {
   const series = 'larissa@google.com';
   const nov2 = series + '@20261102T030000Z';
