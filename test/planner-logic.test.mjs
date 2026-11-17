@@ -433,6 +433,39 @@ test('the report opens on the saved start through today and does not rewrite the
   assert.equal(period.end, '2026-11-28');
 });
 
+test('a report client list shows finished charged and finished free sessions only', () => {
+  const person = client({ id: 'omar', name: 'Omar', packageSessions: '12', packageValue: '4080', startDate: '2026-10-30' });
+  const now = { today: '2026-11-11', time: '18:00' };
+  const range = { start: '2026-10-30', end: '2026-11-28' };
+  const sessions = [
+    { eventId: 'later', clientName: 'Omar', title: 'Omar PT', date: '2026-11-19', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'free-future', clientName: 'Omar', title: 'Omar free PT', date: '2026-11-20', start: '16:00', end: '17:00', status: 'free', disposition: 'kept' },
+    { eventId: 'free-later', clientName: 'Omar', title: 'Omar free PT', date: '2026-11-10', start: '16:00', end: '17:00', status: 'free', disposition: 'kept' },
+    { eventId: 'free', clientName: 'Omar', title: 'Omar PT', date: '2026-11-06', start: '09:00', end: '10:00', status: 'free', disposition: 'kept' },
+    { eventId: 'done', clientName: 'Omar', title: 'Omar PT', date: '2026-11-05', start: '12:00', end: '13:00', status: 'charged', disposition: 'kept' },
+    { eventId: 'today-booked', clientName: 'Omar', title: 'Omar PT', date: '2026-11-11', start: '19:00', end: '20:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'before', clientName: 'Omar', title: 'Omar PT', date: '2026-10-29', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' },
+    { eventId: 'other', clientName: 'Yusuf', title: 'Yusuf PT', date: '2026-11-05', start: '12:00', end: '13:00', status: 'normal', disposition: 'kept' }
+  ];
+  const detail = PT.reportClientDetail(person, sessions, [person], range, now);
+  assert.deepEqual(detail.sessions.map((s) => s.eventId), ['done', 'free', 'free-later']);
+  assert.equal(detail.sessions[0].label, 'Charged · finished');
+  assert.equal(detail.sessions[1].label, 'Free · not counted');
+  assert.equal(detail.sessions[2].label, 'Free · not counted');
+  assert.equal(detail.sessions.some((s) => s.label === 'Booked'), false);
+  assert.equal(detail.finished, 1);
+  assert.equal(detail.free, 2);
+  assert.equal(PT.periodBillable([person], sessions, range, now).map((s) => s.eventId).join(','), 'later,done,today-booked');
+  assert.equal(PT.periodFinished([person], sessions, range, now).map((s) => s.eventId).join(','), 'done');
+  assert.equal(PT.packageUsed(person, sessions, PT.currentPackage(person.packages), [person], now), 1);
+  const titled = sessions.concat([
+    { eventId: 'title-free', clientName: 'Omar', title: 'Omar free PT', date: '2026-11-07', start: '11:00', end: '12:00', status: 'normal', disposition: 'kept' }
+  ]);
+  const shown = PT.reportClientDetail(person, titled, [person], range, now);
+  assert.equal(shown.sessions.filter((s) => s.eventId === 'title-free')[0].label, 'Free · not counted');
+  assert.equal(PT.packageUsed(person, sessions, PT.currentPackage(person.packages), [person], now), 1);
+});
+
 test('a recurring series keeps every occurrence and replaces the old shared id', () => {
   const series = 'larissa@google.com';
   const nov2 = series + '@20261102T030000Z';

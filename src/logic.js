@@ -546,6 +546,40 @@ var PT = (function () {
     out.sort(compareSessions);
     return out;
   }
+  function reportSessionKind(session, now) {
+    if (session && (session.status === 'free' || titleHasFree(session.title))) return { kind: 'free', label: 'Free · not counted' };
+    if (sessionHasEnded(session, now)) return { kind: 'finished', label: 'Charged · finished' };
+    return { kind: 'booked', label: 'Booked' };
+  }
+  function reportClientDetail(client, sessions, allClients, range, now) {
+    var list = sessionsForClient(client, sessions, allClients || [client]);
+    var rows = [], i, s, kind, finished = 0, free = 0;
+    for (i = 0; i < list.length; i++) {
+      s = list[i];
+      if (range && !inPeriod(s.date, range)) continue;
+      if (!sessionHasEnded(s, now)) continue;
+      kind = reportSessionKind(s, now);
+      if (kind.kind === 'free') free++;
+      else finished++;
+      rows.push({
+        eventId: String(s.eventId || ''),
+        date: s.date ? String(s.date).slice(0, 10) : '',
+        start: s.start || '',
+        end: s.end || '',
+        allDay: isYes(s.allDay),
+        title: s.title || '',
+        kind: kind.kind,
+        label: kind.label
+      });
+    }
+    return {
+      clientId: client ? String(client.id) : '',
+      name: client ? client.name : '',
+      finished: finished,
+      free: free,
+      sessions: rows
+    };
+  }
   function packageReady(pkg) {
     return !!(pkg && String(pkg.sessions) !== '' && Number(pkg.sessions) > 0);
   }
@@ -1436,6 +1470,7 @@ var PT = (function () {
     chargeTotalFor: chargeTotalFor,
     commissionEstimate: commissionEstimate,
     sessionsForClient: sessionsForClient,
+    reportClientDetail: reportClientDetail,
     currentRemaining: currentRemaining,
     renewPackage: renewPackage,
     updateCurrentPackage: updateCurrentPackage,

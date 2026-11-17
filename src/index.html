@@ -153,7 +153,23 @@ h2 {
   letter-spacing: 0.02em;
   flex: none;
 }
-.tag.normal, .pill.ok { background: var(--green-soft); color: var(--green); }
+.tag.normal, .tag.finished, .pill.ok { background: var(--green-soft); color: var(--green); }
+button.report-client {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+.report-slot { min-width: 0; }
+.report-slot.is-open { grid-column: 1 / -1; }
+.report-detail { margin-top: 8px; margin-bottom: 0; }
+.report-line { align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.report-line b { white-space: nowrap; }
+.report-line .tag { margin-top: 0; }
 .tag.free { background: var(--blue-soft); color: var(--blue); }
 .tag.booked { background: #e7eef5; color: #3d5a73; }
 .tag.charged, .pill.low { background: var(--amber-soft); color: var(--amber); }
@@ -355,7 +371,7 @@ a { color: var(--green); }
   .home-split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr); gap: 22px; align-items: start; }
   .home-today { min-width: 0; }
   .client-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .client-grid > .client, .client-grid > .row, .client-grid > .card { margin-bottom: 0; }
+  .client-grid > .client, .client-grid > .row, .client-grid > .card, .client-grid > .report-slot { margin-bottom: 0; }
   .week-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; align-items: start; }
   .week-grid .day-head { margin-top: 0; }
   .report-layout { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
@@ -580,7 +596,7 @@ a { color: var(--green); }
       projectedEst: estimate(projected, planned.length)
     };
   }
-  function payStats(pay) {
+  function payStats(pay, scope) {
     var est = pay.est || {};
     var plan = pay.projectedEst || est;
     var off = state.settings && state.settings.showCommission === false;
@@ -589,14 +605,15 @@ a { color: var(--green); }
     var booked = Math.max(0, planN - doneN);
     var tier = (est.tierPercent != null ? est.tierPercent : 0) + '%';
     var planTier = (plan.tierPercent != null ? plan.tierPercent : 0) + '%';
+    var cells = '<div><span>Finished</span><b>' + doneN + '</b></div>' +
+      '<div><span>Earned tier</span><b>' + esc(tier) + '</b></div>' +
+      '<div><span>Earned</span><b>' + esc(moneyExact(pay.earned || 0)) + '</b></div>' +
+      '<div><span>Earned comm.</span><b>' + (off ? 'Off' : esc(moneyExact(est.commission))) + '</b></div>';
+    if (scope === 'report') return '<div class="stats">' + cells + '</div>';
     var note = booked
       ? ('<p class="meta">' + doneN + ' finished · ' + booked + ' still booked in these dates. Earned commission ' + (off ? 'is off' : esc(moneyExact(est.commission))) + ' at ' + esc(tier) + '. If every booked session is done: ' + esc(planTier) + ', revenue ' + esc(moneyExact(pay.projected || 0)) + ', commission ' + (off ? 'off' : esc(moneyExact(plan.commission))) + '.</p>')
       : '<p class="meta">Every booking in these dates has already finished.</p>';
-    return '<div class="stats"><div><span>In period</span><b>' + planN + '</b></div>' +
-      '<div><span>Finished</span><b>' + doneN + '</b></div>' +
-      '<div><span>Earned tier</span><b>' + esc(tier) + '</b></div>' +
-      '<div><span>Earned</span><b>' + esc(moneyExact(pay.earned || 0)) + '</b></div>' +
-      '<div><span>Earned comm.</span><b>' + (off ? 'Off' : esc(moneyExact(est.commission))) + '</b></div></div>' + note;
+    return '<div class="stats"><div><span>In period</span><b>' + planN + '</b></div>' + cells + '</div>' + note;
   }
 
   function homeScreen() {
@@ -751,29 +768,35 @@ a { color: var(--green); }
       : '';
     body += '<div class="card"><div class="pair"><div style="flex:1"><label>From</label><input data-field="report-start" type="date" value="' + esc(range.start) + '"></div><div style="flex:1"><label>To</label><input data-field="report-end" type="date" value="' + esc(range.end) + '"></div></div>' +
       '<p class="meta">Opens from the saved start through today. A change stays for this visit only and does not change the saved period.</p>' + hint + '</div>';
-    body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Sessions in these dates</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + pay.billable.length + '</div>' +
-      '<p class="meta">' + (pay.done || []).length + ' finished · ' + Math.max(0, pay.billable.length - (pay.done || []).length) + ' still booked. Free sessions are not counted.</p>' +
-      payStats(pay) +
+    body += '<div class="report-layout"><div class="report-summary"><div class="card" style="margin-top:12px"><div class="meta">Sessions in these dates</div><div class="hero-num" style="font-size:48px;margin-top:6px">' + (pay.done || []).length + '</div>' +
+      '<p class="meta">' + (pay.done || []).length + ' finished. Free sessions are not counted.</p>' +
+      payStats(pay, 'report') +
       '<p class="meta">Net ' + esc(moneyExact(pay.est.netRevenue)) + ' after ' + esc(String(Math.round(pay.est.netFactor * 100) / 100)) + '%. Quota ' + esc(moneyExact(pay.est.quota)) + ' comes off. Commission revenue ' + esc(moneyExact(pay.est.commRevenue)) + '. Charges ' + esc(money(pay.chargeTotal)) + (pay.est.includeCharges ? ' are in the commission.' : ' stay out of the commission.') + '</p></div>';
     body += '</div><div class="report-people">';
     var rows = (state.clients || []).map(function (c) {
-      var list = PT.sessionsForClient(c, state.sessions, state.clients).filter(function (s) {
-        return PT.inPeriod(s.date, period, state.today);
-      });
-      var counted = list.filter(function (s) { return s.status !== 'free'; }).length;
-      var finished = list.filter(function (s) { return s.status !== 'free' && sessionEnded(s); }).length;
-      var booked = counted - finished;
-      var free = list.filter(function (s) { return s.status === 'free'; }).length;
-      return { name: c.name, counted: counted, finished: finished, booked: booked, free: free };
-    }).filter(function (r) { return r.counted || r.booked || r.free; }).sort(function (a, b) { return b.counted - a.counted; });
+      var detail = PT.reportClientDetail(c, state.sessions, state.clients, period, viewClock());
+      return { id: c.id, name: c.name, finished: detail.finished, free: detail.free, detail: detail };
+    }).filter(function (r) { return r.finished || r.free; }).sort(function (a, b) { return b.finished - a.finished; });
     body += '<h2>By client</h2>';
     if (!rows.length) body += '<div class="card empty">No sessions in these dates.</div>';
     else {
       body += '<div class="client-grid">';
       rows.forEach(function (r) {
-        body += '<div class="card"><div class="spread"><b>' + esc(r.name) + '</b><b>' + r.counted + '</b></div>' +
-          '<div class="meta">' + r.finished + ' finished' + (r.booked ? (' · ' + r.booked + ' booked') : '') + '</div>' +
-          (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</div>';
+        var open = String(ui.reportClientId || '') === String(r.id);
+        body += '<div class="report-slot' + (open ? ' is-open' : '') + '"><button type="button" class="card report-client" data-act="report-client" data-id="' + esc(r.id) + '" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+          '<div class="spread"><b>' + esc(r.name) + '</b><b>' + r.finished + '</b></div>' +
+          '<div class="meta">' + r.finished + ' finished</div>' +
+          (r.free ? '<div class="meta">' + r.free + ' free, not counted</div>' : '') + '</button>';
+        if (open) {
+          body += '<div class="card report-detail"><p class="meta">' + r.detail.finished + ' charged finished, ' + r.detail.free + ' free.</p>';
+          r.detail.sessions.forEach(function (s) {
+            var when = prettyDate(s.date) || s.date || '';
+            if (s.allDay || s.start) when += ' · ' + prettyTime(s.start, s.allDay);
+            body += '<div class="spread report-line"><div><b>' + esc(when) + '</b></div><span class="tag ' + esc(s.kind) + '">' + esc(s.label) + '</span></div>';
+          });
+          body += '<button type="button" class="ghost" data-act="report-client-close">Close</button></div>';
+        }
+        body += '</div>';
       });
       body += '</div>';
     }
@@ -1146,6 +1169,17 @@ a { color: var(--green); }
       var step = el.getAttribute('data-id');
       if (step === 'today') ui.day = state.today;
       else ui.day = PT.addDaysYmd(selectedDay(), Number(step || 0));
+      render();
+      return;
+    }
+    if (act === 'report-client') {
+      var picked = el.getAttribute('data-id');
+      ui.reportClientId = String(ui.reportClientId || '') === String(picked) ? '' : picked;
+      render();
+      return;
+    }
+    if (act === 'report-client-close') {
+      ui.reportClientId = '';
       render();
       return;
     }
